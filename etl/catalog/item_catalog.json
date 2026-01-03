@@ -1,0 +1,523 @@
+{
+  "doordash": {
+    "_comment": "Maps DoorDash item_id to normalized item name and category.",
+    "itm_001": {
+      "name": "Classic Burger",
+      "category": "Entrees"
+    },
+    "itm_002": {
+      "name": "French Fries Large",
+      "category": "Sides"
+    },
+    "itm_003": {
+      "name": "Grilled Chicken Sandwich",
+      "category": "Entrees"
+    },
+    "itm_004": {
+      "name": "Onion Rings",
+      "category": "Sides"
+    },
+    "itm_005": {
+      "name": "Caesar Salad",
+      "category": "Salads"
+    },
+    "itm_006": {
+      "name": "Fish Tacos",
+      "category": "Entrees"
+    },
+    "itm_007": {
+      "name": "BBQ Pulled Pork",
+      "category": "Entrees"
+    },
+    "itm_008": {
+      "name": "Coleslaw",
+      "category": "Sides"
+    },
+    "itm_009": {
+      "name": "Coca Cola Large",
+      "category": "Drinks"
+    },
+    "itm_010": {
+      "name": "Pasta Primavera",
+      "category": "Entrees"
+    },
+    "itm_011": {
+      "name": "Veggie Wrap",
+      "category": "Entrees"
+    },
+    "itm_012": {
+      "name": "Ribeye Steak",
+      "category": "Entrees"
+    },
+    "itm_013": {
+      "name": "Loaded Baked Potato",
+      "category": "Sides"
+    },
+    "itm_014": {
+      "name": "House Wine",
+      "category": "Beverages"
+    },
+    "itm_015": {
+      "name": "Club Sandwich",
+      "category": "Entrees"
+    },
+    "itm_016": {
+      "name": "Shrimp Scampi",
+      "category": "Entrees"
+    },
+    "itm_017": {
+      "name": "Lobster Roll",
+      "category": "Entrees"
+    },
+    "itm_018": {
+      "name": "Clam Chowder",
+      "category": "Appetizers"
+    },
+    "itm_019": {
+      "name": "Chicken Alfredo",
+      "category": "Entrees"
+    },
+    "itm_020": {
+      "name": "Margherita Pizza",
+      "category": "Entrees"
+    },
+    "itm_021": {
+      "name": "Buffalo Chicken Wrap",
+      "category": "Entrees"
+    },
+    "itm_022": {
+      "name": "Wings 12pc",
+      "category": "Appetizers"
+    },
+    "itm_023": {
+      "name": "Nachos Supreme",
+      "category": "Appetizers"
+    },
+    "itm_024": {
+      "name": "Fish and Chips",
+      "category": "Entrees"
+    },
+    "itm_025": {
+      "name": "Philly Cheesesteak",
+      "category": "Entrees"
+    },
+    "itm_026": {
+      "name": "Crab Cakes",
+      "category": "Entrees"
+    },
+    "itm_027": {
+      "name": "Ahi Tuna Bowl",
+      "category": "Entrees"
+    },
+    "itm_028": {
+      "name": "Edamame",
+      "category": "Appetizers"
+    },
+    "itm_029": {
+      "name": "Lobster Mac and Cheese",
+      "category": "Entrees"
+    },
+    "itm_030": {
+      "name": "BBQ Chicken Pizza",
+      "category": "Entrees"
+    },
+    "itm_031": {
+      "name": "Buffalo Wings 12pc",
+      "category": "Appetizers"
+    },
+    "itm_032": {
+      "name": "Quesadilla",
+      "category": "Entrees"
+    },
+    "itm_033": {
+      "name": "Guacamole and Chips",
+      "category": "Appetizers"
+    },
+    "itm_034": {
+      "name": "Veggie Burger",
+      "category": "Entrees"
+    },
+    "itm_035": {
+      "name": "Brunch Platter",
+      "category": "Breakfast"
+    },
+    "itm_036": {
+      "name": "Reuben Sandwich",
+      "category": "Entrees"
+    },
+    "itm_037": {
+      "name": "Pickle Spear",
+      "category": "Sides"
+    },
+    "itm_038": {
+      "name": "Iced Tea",
+      "category": "Beverages"
+    },
+    "itm_039": {
+      "name": "Eggs Benedict",
+      "category": "Breakfast"
+    },
+    "itm_040": {
+      "name": "Fresh Fruit",
+      "category": "Sides"
+    },
+    "itm_041": {
+      "name": "Prime Rib",
+      "category": "Entrees"
+    },
+    "itm_042": {
+      "name": "Mashed Potatoes",
+      "category": "Sides"
+    },
+    "itm_043": {
+      "name": "Filet Mignon",
+      "category": "Entrees"
+    },
+    "itm_044": {
+      "name": "Truffle Fries",
+      "category": "Sides"
+    },
+    "itm_045": {
+      "name": "Turkey Club",
+      "category": "Entrees"
+    },
+    "itm_046": {
+      "name": "Chips",
+      "category": "Sides"
+    },
+    "itm_047": {
+      "name": "Avocado Toast",
+      "category": "Breakfast"
+    }
+  },
+  "square": {
+    "_comment": "Maps Square catalog_object_id (variation ID) to normalized item name and category.",
+    "VAR_BEER_PINT": {
+      "name": "Craft Beer",
+      "category": "Beer & Wine"
+    },
+    "VAR_BURGER_DBL": {
+      "name": "Classic Burger Double",
+      "category": "Burgers"
+    },
+    "VAR_BURGER_REG": {
+      "name": "Classic Burger",
+      "category": "Burgers"
+    },
+    "VAR_BURRITO_REG": {
+      "name": "Breakfast Burrito",
+      "category": "Breakfast"
+    },
+    "VAR_CHICKEN_REG": {
+      "name": "Grilled Chicken Sandwich",
+      "category": "Sandwiches"
+    },
+    "VAR_CHKN_SAND_UNIV": {
+      "name": "Grilled Chicken Sandwich",
+      "category": "Sandwiches"
+    },
+    "VAR_CHOC_SHAKE_MALL": {
+      "name": "Chocolate Milkshake",
+      "category": "Drinks"
+    },
+    "VAR_CHURROS_12_MALL": {
+      "name": "Churros 12pc",
+      "category": "Desserts"
+    },
+    "VAR_CHURROS_UNIV": {
+      "name": "Churros 6pc",
+      "category": "Desserts"
+    },
+    "VAR_COFFEE_REG": {
+      "name": "Coffee",
+      "category": "Drinks"
+    },
+    "VAR_COFFE_UNIV": {
+      "name": "Coffee",
+      "category": "Drinks"
+    },
+    "VAR_CROISSANT_REG": {
+      "name": "Croissant",
+      "category": "Breakfast"
+    },
+    "VAR_ESPRESSO_DBL": {
+      "name": "Espresso Double",
+      "category": "Drinks"
+    },
+    "VAR_ESPRESSO_SINGLE": {
+      "name": "Espresso",
+      "category": "Drinks"
+    },
+    "VAR_EXPRESSO_UNIV": {
+      "name": "Espresso",
+      "category": "Drinks"
+    },
+    "VAR_FILET_REG": {
+      "name": "Filet Mignon",
+      "category": "Entrees"
+    },
+    "VAR_FRIES_BAKEDIN": {
+      "name": "French Fries Large",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_FRIES_LG": {
+      "name": "French Fries Large",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_FRUIT_REG": {
+      "name": "Fresh Fruit Cup",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_HASHBROWNS_MALL": {
+      "name": "Hash Browns",
+      "category": "Breakfast"
+    },
+    "VAR_HASH_REG": {
+      "name": "Hash Browns",
+      "category": "Breakfast"
+    },
+    "VAR_LOBSTER_REG": {
+      "name": "Lobster Roll",
+      "category": "Entrees"
+    },
+    "VAR_NACHOS_REG": {
+      "name": "Nachos Grande",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_OJ_REG": {
+      "name": "Orange Juice",
+      "category": "Drinks"
+    },
+    "VAR_PITCHER_REG": {
+      "name": "Pitcher of Beer",
+      "category": "Beer & Wine"
+    },
+    "VAR_PIZZA_SLC_MALL": {
+      "name": "Margherita Pizza Slice",
+      "category": "Entrees"
+    },
+    "VAR_SALAD_MALL": {
+      "name": "House Salad",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_SALAD_REG": {
+      "name": "Garden Salad",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_SHAKE_CHOC": {
+      "name": "Milkshake",
+      "category": "Drinks"
+    },
+    "VAR_SODA_MALL": {
+      "name": "Coca Cola Large",
+      "category": "Drinks"
+    },
+    "VAR_SODA_UNIV_LG": {
+      "name": "Fountain Soda",
+      "category": "Drinks"
+    },
+    "VAR_STEAK_REG": {
+      "name": "Ribeye Steak",
+      "category": "Entrees"
+    },
+    "VAR_SWEETFRIES_REG": {
+      "name": "Sweet Potato Fries",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_TEA_REG": {
+      "name": "Iced Tea",
+      "category": "Drinks"
+    },
+    "VAR_WINE_BOTTLE": {
+      "name": "House Red Wine",
+      "category": "Beer & Wine"
+    },
+    "VAR_WINE_GLASS": {
+      "name": "House Red Wine",
+      "category": "Beer & Wine"
+    },
+    "VAR_WINGS_12PC": {
+      "name": "Buffalo Wings 12pc",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_WINGS_12_MALL": {
+      "name": "Buffalo Wings 12pc",
+      "category": "Sides & Appetizers"
+    },
+    "VAR_WRAP_REG": {
+      "name": "Veggie Wrap",
+      "category": "Sandwiches"
+    }
+  },
+  "toast": {
+    "_comment": "Maps Toast item.guid to normalized item name and category.",
+    "itm_avotoast_001": {
+      "name": "Avocado Toast",
+      "category": "Breakfast"
+    },
+    "itm_bacon_001": {
+      "name": "Bacon",
+      "category": "Breakfast"
+    },
+    "itm_bbq_001": {
+      "name": "BBQ Pulled Pork",
+      "category": "Entrees"
+    },
+    "itm_beer_001": {
+      "name": "Craft Beer",
+      "category": "Beer"
+    },
+    "itm_bread_001": {
+      "name": "Garlic Bread",
+      "category": "Appetizers"
+    },
+    "itm_bruschetta_001": {
+      "name": "Bruschetta",
+      "category": "Appetizers"
+    },
+    "itm_burger_001": {
+      "name": "Classic Burger",
+      "category": "Burgers"
+    },
+    "itm_burrito_001": {
+      "name": "Breakfast Burrito",
+      "category": "Breakfast"
+    },
+    "itm_caesar_001": {
+      "name": "Caesar Salad",
+      "category": "Salads"
+    },
+    "itm_chowder_001": {
+      "name": "Clam Chowder",
+      "category": "Appetizers"
+    },
+    "itm_club_001": {
+      "name": "Club Sandwich",
+      "category": "Sandwiches"
+    },
+    "itm_coffee_001": {
+      "name": "Coffee",
+      "category": "Beverages"
+    },
+    "itm_coldbrew_001": {
+      "name": "Cold Brew",
+      "category": "Coffee"
+    },
+    "itm_eggsand_001": {
+      "name": "Egg Sandwich",
+      "category": "Breakfast"
+    },
+    "itm_fishnchips_001": {
+      "name": "Fish and Chips",
+      "category": "Entrees"
+    },
+    "itm_fries_001": {
+      "name": "French Fries",
+      "category": "Sides"
+    },
+    "itm_guac_001": {
+      "name": "Guacamole and Chips",
+      "category": "Appetizers"
+    },
+    "itm_hash_001": {
+      "name": "Hash Browns",
+      "category": "Sides"
+    },
+    "itm_lemonade_001": {
+      "name": "Lemonade",
+      "category": "Beverages"
+    },
+    "itm_lobster_001": {
+      "name": "Lobster Roll",
+      "category": "Seafood"
+    },
+    "itm_marg_001": {
+      "name": "Margarita",
+      "category": "Cocktails"
+    },
+    "itm_nachos_001": {
+      "name": "Nachos Supreme",
+      "category": "Appetizers"
+    },
+    "itm_oj_001": {
+      "name": "Orange Juice",
+      "category": "Beverages"
+    },
+    "itm_pancakes_001": {
+      "name": "Pancake Stack",
+      "category": "Breakfast"
+    },
+    "itm_pasta_001": {
+      "name": "Pasta Primavera",
+      "category": "Pasta"
+    },
+    "itm_philly_001": {
+      "name": "Philly Cheesesteak",
+      "category": "Sandwiches"
+    },
+    "itm_potato_001": {
+      "name": "Loaded Baked Potato",
+      "category": "Sides"
+    },
+    "itm_ribeye_001": {
+      "name": "Ribeye Steak",
+      "category": "Steaks"
+    },
+    "itm_rings_001": {
+      "name": "Onion Rings",
+      "category": "Sides"
+    },
+    "itm_sandwich_001": {
+      "name": "Grilled Chicken Sandwich",
+      "category": "Sandwiches"
+    },
+    "itm_scampi_001": {
+      "name": "Shrimp Scampi",
+      "category": "Seafood"
+    },
+    "itm_shake_001": {
+      "name": "Milkshake",
+      "category": "Beverages"
+    },
+    "itm_slaw_001": {
+      "name": "Coleslaw",
+      "category": "Sides"
+    },
+    "itm_smoothie_001": {
+      "name": "Smoothie Bowl",
+      "category": "Breakfast"
+    },
+    "itm_soda_001": {
+      "name": "Soft Drink",
+      "category": "Beverages"
+    },
+    "itm_sweetfries_001": {
+      "name": "Sweet Potato Fries",
+      "category": "Sides"
+    },
+    "itm_tacos_001": {
+      "name": "Fish Tacos",
+      "category": "Entrees"
+    },
+    "itm_tea_001": {
+      "name": "Iced Tea",
+      "category": "Beverages"
+    },
+    "itm_tiramisu_001": {
+      "name": "Tiramisu",
+      "category": "Desserts"
+    },
+    "itm_wine_001": {
+      "name": "House Wine",
+      "category": "Wine"
+    },
+    "itm_wings_001": {
+      "name": "Chicken Wings",
+      "category": "Appetizers"
+    },
+    "itm_wrap_001": {
+      "name": "Veggie Wrap",
+      "category": "Wraps"
+    }
+  }
+}
