@@ -30,9 +30,24 @@ npm-debug.log*
 
 # Testing
 coverage/
+.pytest_cache/
 
 # Python
 __pycache__/
 *.py[cod]
 venv/
 .venv/
+
+# Notes
+todo.txt
+
+# Data
+data/SCHEMA.md
+
+# Test outputs
+test_output/
+test_pipeline.py
+
+
+# Python virtual environment
+etl/venv/
