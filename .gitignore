@@ -51,3 +51,6 @@ test_pipeline.py
 
 # Python virtual environment
 etl/venv/
+
+# Docs
+docs/WEBAPP_ARCHITECTURE.md
