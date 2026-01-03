@@ -74,7 +74,7 @@ export default function LoginPage() {
                 required
                 disabled={isLoading}
               />
-            </div>
+        </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -85,12 +85,12 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoading}
-              />
+            />
             </div>
             {error && (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
                 {error}
-              </div>
+        </div>
             )}
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? 'Signing in...' : 'Sign in'}
