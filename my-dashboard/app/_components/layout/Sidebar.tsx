@@ -9,9 +9,19 @@ interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
   conversations?: Array<{ id: string; title: string }>
+  selectedConversationId?: string | null
+  onSelectConversation?: (conversationId: string) => void
+  onNewChat?: () => void
 }
 
-export function Sidebar({ isOpen, onToggle, conversations = [] }: SidebarProps) {
+export function Sidebar({ 
+  isOpen, 
+  onToggle, 
+  conversations = [], 
+  selectedConversationId,
+  onSelectConversation,
+  onNewChat
+}: SidebarProps) {
   return (
     <aside
       className={cn(
@@ -55,6 +65,7 @@ export function Sidebar({ isOpen, onToggle, conversations = [] }: SidebarProps) 
           <Button
             variant="ghost"
             size="icon"
+            onClick={onNewChat}
             className={cn(
               'h-9 w-9',
               isOpen && 'w-full justify-start gap-2 px-3'
@@ -79,8 +90,9 @@ export function Sidebar({ isOpen, onToggle, conversations = [] }: SidebarProps) 
                 conversations.map((conversation) => (
                   <Button
                     key={conversation.id}
-                    variant="ghost"
+                    variant={selectedConversationId === conversation.id ? "secondary" : "ghost"}
                     className="w-full justify-start text-left"
+                    onClick={() => onSelectConversation?.(conversation.id)}
                   >
                     <span className="truncate text-sm">
                       {conversation.title}
