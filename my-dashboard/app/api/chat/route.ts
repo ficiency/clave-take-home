@@ -2,10 +2,10 @@ import { NextRequest } from 'next/server'
 import { getAccountIdFromRequest } from '@/app/_lib/auth'
 import { getSupabaseAdmin } from '@/app/_lib/supabase/server'
 import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, AIMessage, ToolMessage } from '@langchain/core/messages'
+import { HumanMessage, AIMessage, ToolMessage, AIMessageChunk } from '@langchain/core/messages'
 import { createAgent } from 'langchain'
 import { SYSTEM_PROMPT } from '@/app/_lib/agent/prompts'
-import { createExecuteSQLTool } from '@/app/_lib/agent/tools'
+import { createExecuteSQLTool, createChartTool } from '@/app/_lib/agent/tools'
 import { StreamEvent } from '@/app/_types/chat'
 
 export async function POST(request: NextRequest) {
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       temperature: 0.3,
     })
 
-    const tools = [createExecuteSQLTool()]
+    const tools = [createExecuteSQLTool(), createChartTool()]
 
     const agent = createAgent({
       model,
@@ -95,6 +95,8 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         const encoder = new TextEncoder()
         let fullResponse = ''
+        let chartConfig: any = null
+        let previousWasChunk = false // Rastrear si el mensaje anterior era un chunk
 
         const sendEvent = (event: StreamEvent) => {
           const data = JSON.stringify(event)
@@ -108,27 +110,95 @@ export async function POST(request: NextRequest) {
           const responseStream = await agent.stream({
             messages: langchainMessages,
           }, {
-            streamMode: 'messages',
+            streamMode: 'updates',
           })
 
-          for await (const [messageChunk, metadata] of responseStream) {
-            // Filtrar ToolMessage - solo streamear mensajes de AI
-            if (messageChunk instanceof ToolMessage) {
-              continue
-            }
-            
-            const chunkContent = messageChunk.content
-            if (chunkContent && typeof chunkContent === 'string') {
-              fullResponse += chunkContent
-              sendEvent({ type: 'text', content: chunkContent })
+          let processedContent = new Set<string>() // Rastrear contenido ya procesado
+          
+          for await (const updates of responseStream) {
+            console.log(`[STREAM] Update received for node: ${Object.keys(updates).join(', ')}`)
+            for (const [nodeName, nodeUpdate] of Object.entries(updates)) {
+              if (nodeUpdate.messages && Array.isArray(nodeUpdate.messages)) {
+                console.log(`[STREAM] Node "${nodeName}" has ${nodeUpdate.messages.length} messages`)
+                
+                // Solo procesar el ÚLTIMO mensaje de cada tipo para evitar duplicados
+                const lastMessage = nodeUpdate.messages[nodeUpdate.messages.length - 1]
+                
+                // Crear un ID único para este mensaje basado en su contenido y tipo
+                const messageId = `${nodeName}-${lastMessage.constructor.name}-${JSON.stringify(lastMessage.content).substring(0, 100)}`
+                
+                if (processedContent.has(messageId)) {
+                  console.log(`[STREAM] Message already processed, skipping`)
+                  continue
+                }
+                
+                processedContent.add(messageId)
+                console.log(`[STREAM] Message type: ${lastMessage.constructor.name}`)
+                
+                if (lastMessage instanceof ToolMessage) {
+                  console.log(`[STREAM] ToolMessage from tool: ${lastMessage.name}`)
+                  // Detectar si es resultado de create_chart
+                  try {
+                    const toolContent = typeof lastMessage.content === 'string' 
+                      ? lastMessage.content 
+                      : String(lastMessage.content)
+                    const toolResult = JSON.parse(toolContent)
+                    if (toolResult.success && toolResult.chart) {
+                      chartConfig = toolResult.chart
+                      sendEvent({ type: 'chart', content: toolResult.chart })
+                    }
+                  } catch (e) {
+                    // No es JSON válido o no es chart, continuar
+                  }
+                  continue
+                }
+                
+                // Manejar tanto AIMessage como AIMessageChunk
+                if (lastMessage instanceof AIMessage || lastMessage instanceof AIMessageChunk) {
+                  const content = lastMessage.content
+                  const hasToolCalls = lastMessage.tool_calls && lastMessage.tool_calls.length > 0
+                  
+                  console.log(`[STREAM] ${lastMessage instanceof AIMessageChunk ? 'AIMessageChunk' : 'AIMessage'} - hasToolCalls: ${hasToolCalls}, content: "${content}", contentType: ${typeof content}`)
+                  
+                  // Streamear contenido de texto SIEMPRE, incluso si hay tool_calls
+                  if (content) {
+                    const contentStr = typeof content === 'string' ? content : String(content)
+                    if (contentStr.trim()) {
+                      // Agregar 2 saltos de línea antes de cada chunk nuevo si el anterior también era chunk
+                      const textToStream = lastMessage instanceof AIMessageChunk && previousWasChunk
+                        ? `\n\n${contentStr}` 
+                        : contentStr
+                      
+                      console.log(`[STREAM] Streaming text content: "${contentStr.substring(0, 50)}..."`)
+                      fullResponse += textToStream
+                      sendEvent({ type: 'text', content: textToStream })
+                      
+                      // Actualizar flag para el próximo mensaje
+                      previousWasChunk = lastMessage instanceof AIMessageChunk
+                    } else {
+                      console.log(`[STREAM] Content is empty string`)
+                    }
+                  } else {
+                    console.log(`[STREAM] Content is null/undefined`)
+                  }
+                  
+                  if (hasToolCalls && lastMessage.tool_calls) {
+                    console.log(`[STREAM] Tool calls detected:`, lastMessage.tool_calls.map((tc: any) => tc.name))
+                  }
+                }
+              }
             }
           }
 
-          // Guardar respuesta completa en DB
+          // Guardar respuesta completa en DB con metadata
+          const messageMetadata = chartConfig ? { chart: chartConfig } : {}
+          console.log('[CHAT] Saving message with metadata:', JSON.stringify(messageMetadata, null, 2))
+          
           await supabaseAdmin.from('messages').insert({
             conversation_id: conversationId,
             role: 'ai',
             content: fullResponse,
+            metadata: messageMetadata,
           })
 
           // Actualizar updated_at de conversación
