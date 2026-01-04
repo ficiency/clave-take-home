@@ -1,193 +1,340 @@
 # Clave Engineering Take-Home Assessment
 
-## Natural Language Dashboard Generator
+> **Solution Submission** - This repository contains my implementation of the Clave Engineering Take-Home Assessment.  
+> **Live Demo:** [Deployed on Vercel](https://clave-take-home.vercel.app)  
+> **Original Challenge:** [clave-take-home](https://github.com/vale-clave/clave-take-home)
 
-### Overview
+A natural language analytics dashboard for restaurant data, consolidating information from multiple POS systems (DoorDash, Square, Toast) and enabling AI-powered insights through conversational queries.
 
-At Clave, we consolidate restaurant data from multiple sources (POS systems, delivery platforms, etc.) and transform it into actionable insights powered by AI. Your challenge is to build a mini version of this: **a natural language dashboard for restaurant analytics.**
+## Table of Contents
 
-### The Challenge
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Data Pipeline](#data-pipeline)
+- [Web Application](#web-application)
+- [Database Schema](#database-schema)
+- [Features](#features)
+- [Future Improvements](#future-improvements)
 
-Build a web application where a restaurant owner can type requests like:
-- "Show me sales comparison between Downtown and Airport locations"
-- "What were my top 5 selling products last week?"
-- "Graph hourly sales for Friday vs Saturday at all stores"
-- "Compare delivery vs dine-in revenue this month"
+## Overview
 
-**...and the system generates the appropriate visualization dynamically.**
+This project implements a complete data engineering and AI integration solution for restaurant analytics. It processes messy, multi-source JSON data into a clean, normalized database, then provides an intelligent chat interface where users can query their data using natural language.
 
-**Key Challenge**: You have 6 messy JSON files with different schemas. Clean them up, normalize them into a unified format, then build the AI-powered dashboard on top.
+**Key Capabilities:**
+- Multi-source data ingestion (DoorDash, Square, Toast POS)
+- Data normalization and cleaning
+- Medallion architecture for scalable data processing
+- AI-powered natural language query interface
+- Dynamic visualization generation (charts, tables, metrics)
+- Real-time streaming responses
 
----
+## Architecture
 
-## What We Provide
+The solution follows a **Medallion Architecture** (Bronze → Silver → Gold) pattern, optimizing for both data quality and AI query efficiency.
 
-Ready-to-use data in `/data/sources/` - representing 3 different restaurant data sources:
+### Bronze Layer (Raw)
+Stores original JSON from all sources in the `raw_data` table. Preserves complete audit trail and enables reprocessing without data loss. No transformation—pure preservation.
 
-| Source | Files | What It Contains |
-|--------|-------|------------------|
-| **Toast POS** | `toast_pos_export.json` | Orders with checks, payments, menu items |
-| **DoorDash** | `doordash_orders.json` | Delivery/pickup orders with items and fees |
-| **Square POS** | `square/catalog.json`, `square/orders.json`, `square/payments.json`, `square/locations.json` | Split across multiple files like the real API |
+### Silver Layer (Core)
+Normalized, production-ready tables (`locations`, `orders`, `order_items`) containing fields shared across all sources. Source-specific metadata stored in JSONB `metadata` columns to avoid nullable columns and wasted space. Optimized for standard analytics queries.
 
-All data covers **4 restaurant locations** (Downtown, Airport, Mall, University) from **January 1-4, 2025**.
+### Gold Layer (Curated)
+AI-optimized VIEWs (`ai_orders`, `ai_order_items`) that flatten JSONB metadata into columns and pre-resolve JOINs. Simplifies AI queries, reduces token usage, and improves response times.
 
-⚠️ **The data is intentionally messy!** You'll find:
-- Inconsistent product names across locations (e.g., "Hash Browns" vs "Hashbrowns")
-- Typos in item names (e.g., "Griled Chiken", "expresso", "coffe")
-- Categories with/without emojis (e.g., "🍔 Burgers" vs "Burgers")
-- Variations baked into names (e.g., "Churros 12pcs" vs "Churros" with variations)
-- Different formats for similar data
+**Benefits:**
+- Evolution-ready: frequently accessed metadata fields can be promoted from JSONB to core columns
+- Token-efficient: AI queries simplified views instead of complex JSONB extraction
+- Maintainable: clear separation between raw, processed, and curated data
 
-**Your job:** Clean, normalize, and combine these into a unified schema, then build the AI dashboard.
+## Tech Stack
 
----
+### Backend / ETL
+- **Python 3.12+** - Data processing and transformation
+- **Pydantic** - Data validation and schema enforcement
+- **Supabase (PostgreSQL)** - Primary database
+- **PostgreSQL** - Direct connection for AI agent queries
 
-## Requirements
+### Frontend / Web Application
+- **Next.js 16** (App Router) - React framework
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **shadcn/ui** - UI components
+- **Recharts** - Chart visualization library
 
-### 1. Data Cleaning & Normalization
-- **Parse all JSON files** and understand their structures
-- **Design a Supabase database schema** that unifies all sources
-- Handle different formats for: timestamps, amounts, locations, order types, items
-- **Clean and normalize** the data (fix inconsistencies, standardize formats)
-- **Insert into Supabase** - Write scripts to populate your database
-- **Document your approach** - show your thought process and decisions
+### AI / ML
+- **LangChain** - Agent orchestration
+- **OpenAI GPT-4** - Language model
+- **LangChain Tools** - SQL execution and chart generation
 
-### 2. Natural Language Query Interface
-- Text input where users describe what they want to see
-- Use an LLM to interpret requests and map them to data queries
-- Handle ambiguous queries gracefully (e.g., "sales" could mean revenue or order count)
-- **Structure your prompts** to return structured data for reliable parsing
+### Infrastructure
+- **Supabase** - Database, authentication, API
 
-### 3. Dynamic Visualization Engine
-- Generate appropriate chart types based on query intent (bar, line, pie, table, metric cards, etc.)
-- The system should choose the visualization type, not the user
-- Handle multiple data series and complex comparisons
+## Project Structure
 
-### 4. Interactive Dashboard
-- Generated visualizations appear as "widgets" (charts + text summaries)
-- Users can add multiple widgets from different queries
-- Clean, usable interface with meaningful insights
-- Support for various chart types: bar, line, pie, tables, metrics
-
----
-
-## Technical Requirements
-
-- **Frontend:** **Next.js** with TypeScript
-- **Backend/Data Processing:** Choose what works best for you:
-  - Next.js API routes (keep it all in one project)
-  - Express.js with TypeScript (separate backend)
-  - Python (FastAPI, Flask, or scripts for data transformations)
-- **Database:** **Supabase** (PostgreSQL) - Store your normalized data here
-- **AI Integration:** You'll need an API key for your chosen LLM provider. Structure your code so we can easily plug in our own key for testing.
-- **Charting:** Any library (Recharts, Chart.js, D3, Plotly, etc.)
-- **Styling:** Your choice. We care more about functionality than pixel-perfection, but it should be usable.
-
-### Why Supabase?
-We use Supabase internally at Clave. This lets us evaluate:
-- Your database schema design
-- How you model restaurant data
-- SQL query patterns for analytics
-- Integration with a real database (not just in-memory)
-
----
-
-## What We're Evaluating
-
-| Area | What We Look For |
-|------|------------------|
-| **Data Cleaning** | How you parse, understand, and normalize messy JSON data into clean structures |
-| **Database Schema** | Your Supabase table design, relationships, and indexing for analytics queries |
-| **Data Transformation** | Handling different formats, missing data, and creating consistent representations |
-| **AI Integration** | Natural language understanding, query parsing, and visualization generation |
-| **Dashboard UX** | Clean interface with meaningful charts, tables, and text summaries |
-| **Code Quality** | Well-structured code (TypeScript/Python) with good error handling and documentation |
-| **Problem Solving** | Creative solutions to data challenges and edge cases |
-
----
-
-## Deliverables
-
-1. **Forked GitHub Repository** (keep it public)
-2. **Code Structure** showing:
-   - Data ingestion/normalization scripts
-   - Supabase schema (migrations or SQL files)
-   - AI integration logic
-   - Visualization components
-3. **README** with:
-   - Setup/installation instructions (including Supabase setup)
-   - Data cleaning/normalization approach and database schema design
-   - AI query parsing and visualization logic
-   - Assumptions, tradeoffs, and design decisions
-   - What you'd improve with more time
-4. **Working Demo** - Deployed (Vercel, Netlify, etc.) or clear local setup instructions
-5. **Supabase Project** - Share access or provide SQL export of your schema
-6. **Environment Variables** - Email us your `.env` file or credentials (API keys, Supabase URL/key, etc.) so we can run your project locally. Send to `carlos@tryclave.ai` and `valentina@tryclave.ai`
-
----
-
-## Difficulty & Expectations
-
-This assessment tests **real data engineering + AI integration skills**. You'll need to:
-
-- Parse and clean 6 different JSON data formats
-- Design a Supabase database schema for restaurant analytics
-- Handle data type conversions, missing fields, and structural differences
-- Build an AI system that understands natural language queries
-- Create a functional dashboard with charts and text using TypeScript
-
-**We expect production-quality code** with proper error handling, clean architecture, and good documentation.
-
-## Suggested Workflow
-
-1. **Explore the data** - Spend time understanding each JSON file's structure
-2. **Set up Supabase** - Create a project at [supabase.com](https://supabase.com)
-3. **Design your schema** - Plan your database tables and relationships
-4. **Build data cleaning** - Write scripts to parse, clean, and insert into Supabase
-5. **Create the dashboard** - Build the UI with Next.js (use API routes or Express for backend)
-6. **Add AI integration** - Connect LLM to parse queries and generate SQL/visualizations
-7. **Polish & test** - Make it look good and handle edge cases
-
-## Time & Deadline
-
-- **Suggested effort:** 8-12 hours (but no hard limit—take the time you need to do it well)
-- **Deadline:** `January 3rd, 2026 at 11:59pm`
-- **AI Usage:** Encouraged! Use Cursor, Claude Code, and/or whatever tools help you build better.
-
----
-
-## Questions?
-
-If anything is unclear, reach out to `carlos@tryclave.ai` or `valentina@tryclave.ai`. Asking good questions is a plus, not a minus.
-
----
+```
+clave-take-home/
+├── etl/                          # Data pipeline
+│   ├── extractors/               # Raw data extraction
+│   ├── transformers/             # Data transformation
+│   ├── catalog/                  # Item catalog (normalization)
+│   ├── schemas/                  # Pydantic models
+│   └── data/sources/             # Raw JSON source files
+│
+├── my-dashboard/                 # Next.js web application
+│   ├── app/
+│   │   ├── (dashboard)/          # Dashboard routes
+│   │   ├── api/                  # API routes (chat, auth, conversations)
+│   │   ├── _components/          # React components
+│   │   ├── _lib/                 # Utilities (agent, db, auth)
+│   │   └── _types/               # TypeScript types
+│   └── components/ui/            # shadcn/ui components
+│
+└── docs/                         # Documentation
+    ├── EXAMPLE_QUERIES.md        # Query examples
+    └── SCHEMA_HINTS.md           # Schema documentation
+```
 
 ## Getting Started
 
+### Prerequisites
+
+- Python 3.12+
+- Node.js 18+
+- Supabase account
+- OpenAI API key
+
+### Environment Setup
+
+1. **Clone the repository:**
 ```bash
-# Fork this repo to your own GitHub account, then clone your fork
-git clone [your-fork-url]
-
-# Check out the mock data
-ls data/sources/
-
-# Set up Next.js (required for frontend)
-npx create-next-app@latest my-dashboard --typescript
-
-# Backend options (choose one):
-# Option A: Use Next.js API routes (already included)
-# Option B: Separate Express backend
-mkdir my-api && cd my-api && npm init -y && npm install express typescript @types/express ts-node
-# Option C: Python for data processing/API
-pip install fastapi uvicorn supabase pandas
-
-# Set up Supabase
-# 1. Create a project at https://supabase.com
-# 2. Get your project URL and anon key from Settings > API
-# 3. Install the client: npm install @supabase/supabase-js (or: pip install supabase)
-
-# Start building!
+git clone [repository-url]
+cd clave-take-home
 ```
 
-Good luck! We're excited to see what you create. 🚀
+2. **Set up Python environment:**
+```bash
+cd etl
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+3. **Set up Next.js application:**
+```bash
+cd my-dashboard
+npm install
+```
+
+4. **Configure environment variables:**
+
+Create `.env.local` in `my-dashboard/`:
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+OPENAI_API_KEY=your_openai_api_key
+DATABASE_URL=postgresql://user:password@host:port/database
+```
+
+Create `.env` in `etl/`:
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_service_role_key
+```
+
+5. **Set up Supabase database:**
+   - Create tables using SQL from `etl/schemas/`
+   - Create views using SQL from `etl/schemas/views.py`
+
+### Running the ETL Pipeline
+
+```bash
+cd etl
+
+# Extract raw data
+python extractors/extract_all.py
+
+# Transform and load
+python transformers/run.py
+```
+
+### Running the Web Application
+
+**Local Development:**
+```bash
+cd my-dashboard
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+**Production Deployment:**
+The application is deployed on Vercel and available at: [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)
+
+## Data Pipeline
+
+### Extract
+Reads JSON files from `etl/data/sources/` and inserts raw data into the `raw_data` table. Each entity (location, order, payment) gets its own row with source metadata. No transformation—pure preservation.
+
+**Source Files:**
+- `doordash_orders.json` - DoorDash orders
+- `square/catalog.json`, `square/orders.json`, `square/payments.json`, `square/locations.json` - Square POS data
+- `toast_pos_export.json` - Toast POS data
+
+### Transform
+Multi-stage transformation pipeline with dependency management:
+
+1. **Locations** - Extract and normalize location data
+2. **Orders** - Transform orders with FK lookups to locations
+3. **Order Items** - Process items with catalog lookups for normalized names/categories
+4. **Metadata Enrichment** - Populate JSONB `metadata` columns with source-specific fields
+
+**Key Transformations:**
+- Status normalization ("DELIVERED" → "completed")
+- Fulfillment method mapping ("MERCHANT_DELIVERY" → "DELIVERY")
+- Money value handling (already in cents)
+- Catalog-based item name/category normalization
+- Source-specific field extraction to JSONB
+
+**Item Catalog:**
+A pre-built catalog (`etl/catalog/item_catalog.json`) maps source-specific item IDs to normalized names and categories. Built during onboarding, updated when menus change. Enables clean data insertion without per-run parsing or regex.
+
+### Load
+Validates data using Pydantic schemas before insertion. Reports counts and errors per stage for transparency.
+
+### Reprocessability
+The entire pipeline is rerunnable. Truncate downstream tables, re-execute transforms—Bronze layer preserves everything.
+
+## Web Application
+
+### Features
+
+**Natural Language Query Interface**
+- Chat-based interface for asking questions in plain English
+- Real-time streaming responses
+- Conversation history persistence
+
+**AI Agent**
+- LangChain-powered agent with tools for SQL execution and chart generation
+- Context-aware responses using conversation history
+- Automatic query generation based on user intent
+
+**Dynamic Visualizations**
+- Automatically generates appropriate chart types (bar, line, pie, table, card)
+- Supports multiple data series and complex comparisons
+- Responsive, interactive charts using Recharts
+
+**Conversation Management**
+- Persistent conversations with message history
+- Sidebar navigation for conversation switching
+- Automatic conversation creation on first message
+
+### Architecture
+
+**Frontend (Next.js App Router)**
+- Server-side rendering for performance
+- Client components for interactivity
+- API routes for backend logic
+
+**API Routes**
+- `/api/chat` - Streaming chat endpoint with SSE
+- `/api/auth/login` - Authentication
+- `/api/conversations` - Conversation management
+- `/api/conversations/[id]/messages` - Message history
+
+**AI Agent Tools**
+- `execute_sql` - Validated SQL execution against PostgreSQL
+- `create_chart` - Chart configuration generation
+
+### Query Flow
+
+1. User sends natural language query
+2. AI agent interprets intent and generates SQL (if needed)
+3. SQL executed against Gold layer views (`ai_orders`, `ai_order_items`)
+4. Results processed and formatted
+5. Chart generated if visualization requested
+6. Response streamed back to user via SSE
+
+## Database Schema
+
+### Silver Layer Tables
+
+**`locations`**
+- `location_id` (UUID, PK)
+- `source_name`, `source_location_id`
+- `name`, `address_line_1`, `city`, `state`, `postal_code`, `country`, `timezone`
+
+**`orders`**
+- `order_id` (UUID, PK)
+- `location_id` (FK → locations)
+- `source_name`, `source_order_id`
+- `created_at`, `closed_at`, `status`, `fulfillment_method`
+- `subtotal`, `tax_amount`, `tip_amount`, `total_amount` (all in cents)
+- `metadata` (JSONB) - Source-specific fields
+
+**`order_items`**
+- `order_item_id` (UUID, PK)
+- `order_id` (FK → orders)
+- `source_name`, `source_order_item_id`
+- `item_name`, `category` (normalized via catalog)
+- `quantity`, `unit_price`, `total_price` (in cents)
+
+### Gold Layer Views
+
+**`ai_orders`**
+Flattened view of orders with:
+- All core order fields
+- Pre-joined location information
+- Extracted metadata fields as columns (payment_type, delivery_fee, etc.)
+
+**`ai_order_items`**
+Flattened view of order items with:
+- All core item fields
+- Pre-joined order and location context
+- Ready for analytics queries
+
+### Raw Layer
+
+**`raw_data`**
+- `raw_id` (UUID, PK)
+- `source_name`, `entity_type`, `source_entity_id`
+- `data` (JSONB) - Complete original JSON
+
+## Features
+
+✅ Multi-source data ingestion (DoorDash, Square, Toast)
+✅ Data normalization and cleaning pipeline
+✅ Medallion architecture for scalable processing
+✅ Item catalog for consistent product naming
+✅ Natural language query interface
+✅ AI-powered SQL generation and execution
+✅ Dynamic chart generation (bar, line, pie, table, card)
+✅ Real-time streaming responses
+✅ Conversation history persistence
+✅ Secure authentication
+✅ Production-ready error handling
+✅ **Deployed on Vercel** - Live demo available
+
+## Deployment
+
+The application is deployed on **Vercel** and accessible at:
+- **Production URL:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)
+
+The deployment includes:
+- Next.js application (frontend + API routes)
+- Environment variables configured for production
+- Automatic deployments on push to main branch
+
+## Future Improvements
+
+- **Schema Evolution:** Promote frequently accessed metadata fields from JSONB to core columns based on usage patterns
+- **Query Optimization:** Add indexes based on actual query patterns
+- **Error Recovery:** Implement retry logic and partial failure handling
+- **Monitoring:** Add observability for ETL pipeline and AI agent performance
+- **Caching:** Cache common query results to reduce database load
+- **Export:** Add data export functionality (CSV, PDF reports)
+- **Advanced Visualizations:** Support for more chart types (heatmaps, scatter plots)
+- **Multi-tenant:** Support for multiple restaurant accounts with data isolation
