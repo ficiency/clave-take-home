@@ -26,7 +26,7 @@ function useTypingEffect() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isDeleting, setIsDeleting] = useState(false)
   
-  const texts = ['Clave Team', 'Mateo', 'Vale', 'Carlos']
+  const texts = ['Clave Team', 'Mateo', 'Tadeo', 'Vale', 'Carlos']
   const typingSpeed = 100
   const deletingSpeed = 50
   const pauseAfterComplete = 2000
@@ -312,7 +312,7 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
               className="h-8 w-8 shrink-0"
             />
             <span>
-               <span className="font-borel">hello {typingText}</span>!
+              <span className="font-borel">hello</span> <span className="font-borel">{typingText}</span>!
             </span>
           </p>
           <form
