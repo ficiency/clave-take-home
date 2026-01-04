@@ -1,6 +1,7 @@
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { z } from 'zod'
 import { getPostgresPool } from '@/app/_lib/db/postgres'
+import { ChartConfig, ChartType } from '@/app/_types/chart'
 
 const ALLOWED_TABLES = [
   'locations',
@@ -25,8 +26,21 @@ const DANGEROUS_KEYWORDS = [
 function validateSQL(sql: string): { valid: boolean; error?: string } {
   const upperSQL = sql.trim().toUpperCase()
   
-  if (!upperSQL.startsWith('SELECT')) {
-    return { valid: false, error: 'Only SELECT statements are allowed' }
+  // Permitir SELECT directo o CTE (WITH ... SELECT)
+  const isSelect = upperSQL.startsWith('SELECT')
+  const isCTE = upperSQL.startsWith('WITH')
+  
+  if (!isSelect && !isCTE) {
+    return { valid: false, error: 'Only SELECT statements are allowed (including CTEs with WITH)' }
+  }
+
+  // Si es CTE, verificar que solo contenga SELECTs dentro
+  if (isCTE) {
+    // Contar SELECTs y verificar que haya al menos uno
+    const selectCount = (upperSQL.match(/\bSELECT\b/g) || []).length
+    if (selectCount === 0) {
+      return { valid: false, error: 'CTE must contain SELECT statements' }
+    }
   }
 
   for (const keyword of DANGEROUS_KEYWORDS) {
@@ -89,6 +103,49 @@ export function createExecuteSQLTool() {
         console.log('')
         return JSON.stringify({ 
           error: error instanceof Error ? error.message : 'Unknown error executing SQL' 
+        })
+      }
+    },
+  })
+}
+
+export function createChartTool() {
+  return new DynamicStructuredTool({
+    name: 'create_chart',
+    description: 'Create a chart visualization from data. Use this AFTER executing SQL queries to visualize the results. The chart will be displayed to the user.',
+    schema: z.object({
+      chartConfig: z.object({
+        type: z.enum(['bar', 'bar-horizontal', 'bar-grouped', 'line', 'line-multi', 'pie', 'card', 'table']),
+        title: z.string(),
+        data: z.array(z.record(z.string(), z.any())),
+        xAxis: z.string().optional(),
+        yAxis: z.string().optional(),
+        series: z.array(z.string()).optional(),
+        nameKey: z.string().optional(),
+        valueKey: z.string().optional(),
+        value: z.union([z.number(), z.string()]).optional(),
+        label: z.string().optional(),
+        change: z.number().optional(),
+        columns: z.array(z.object({
+          key: z.string(),
+          label: z.string(),
+        })).optional(),
+      }),
+    }),
+    func: async ({ chartConfig }) => {
+      try {
+        console.log('\n[TOOL: create_chart] Creating chart:')
+        console.log('─'.repeat(80))
+        console.log(JSON.stringify(chartConfig, null, 2))
+        console.log('─'.repeat(80))
+        console.log('')
+
+        return JSON.stringify({ success: true, chart: chartConfig })
+      } catch (error) {
+        console.log(`[TOOL: create_chart] ❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.log('')
+        return JSON.stringify({ 
+          error: error instanceof Error ? error.message : 'Unknown error creating chart' 
         })
       }
     },
