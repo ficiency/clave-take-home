@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { UserMessage } from './UserMessage'
 import { AIMessage } from './AIMessage'
 import { getAuthToken } from '@/app/_lib/client-auth'
+import { StreamEvent } from '@/app/_types/chat'
 
 interface Message {
   id: string
@@ -109,9 +110,25 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
       }
     }
 
-    // Save user message
+    // Add user message to UI immediately
+    const tempUserMessageId = `temp-${Date.now()}`
+    setMessages((prev) => [...prev, {
+      id: tempUserMessageId,
+      role: 'user',
+      content: userMessageContent,
+    }])
+
+    // Add placeholder AI message for streaming
+    const tempAIMessageId = `temp-ai-${Date.now()}`
+    setMessages((prev) => [...prev, {
+      id: tempAIMessageId,
+      role: 'ai',
+      content: '',
+    }])
+
+    // Call /api/chat endpoint for streaming
     try {
-      const userMsgResponse = await fetch('/api/messages', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,57 +136,69 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
         },
         body: JSON.stringify({
           conversationId: currentConversationId,
-          role: 'user',
-          content: userMessageContent,
+          message: userMessageContent,
         }),
       })
 
-      if (!userMsgResponse.ok) {
-        console.error('Failed to save user message')
-      } else {
-        const { message: savedMsg } = await userMsgResponse.json()
-        setMessages((prev) => [...prev, {
-          id: savedMsg.message_id,
-          role: 'user',
-          content: savedMsg.content,
-        }])
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      if (!response.body) {
+        throw new Error('No response body')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event: StreamEvent = JSON.parse(line.slice(6))
+              
+              if (event.type === 'text') {
+                setMessages((prev) => prev.map((msg) => 
+                  msg.id === tempAIMessageId
+                    ? { ...msg, content: msg.content + event.content }
+                    : msg
+                ))
+              } else if (event.type === 'done') {
+                // Reload messages to get the final saved versions from DB
+                if (currentConversationId) {
+                  await loadMessages(currentConversationId)
+                }
+              } else if (event.type === 'error') {
+                console.error('Stream error:', event.content)
+                setMessages((prev) => prev.map((msg) => 
+                  msg.id === tempAIMessageId
+                    ? { ...msg, content: `Error: ${event.content}` }
+                    : msg
+                ))
+              }
+            } catch (e) {
+              console.error('Error parsing SSE event:', e)
+            }
+          }
+        }
       }
     } catch (error) {
-      console.error('Error saving user message:', error)
+      console.error('Error calling chat endpoint:', error)
+      setMessages((prev) => prev.map((msg) => 
+        msg.id === tempAIMessageId
+          ? { ...msg, content: 'Error: Failed to get AI response' }
+          : msg
+      ))
     }
-
-    // Simulate AI response (temporary)
-    setTimeout(async () => {
-      const aiResponseContent = 'This is a simulated AI response. The actual AI integration will be implemented later.'
-      
-      try {
-        const aiMsgResponse = await fetch('/api/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            conversationId: currentConversationId,
-            role: 'ai',
-            content: aiResponseContent,
-          }),
-        })
-
-        if (!aiMsgResponse.ok) {
-          console.error('Failed to save AI message')
-        } else {
-          const { message: savedMsg } = await aiMsgResponse.json()
-          setMessages((prev) => [...prev, {
-            id: savedMsg.message_id,
-            role: 'ai',
-            content: savedMsg.content,
-          }])
-        }
-      } catch (error) {
-        console.error('Error saving AI message:', error)
-      }
-    }, 500)
   }
 
   const hasMessages = messages.length > 0
