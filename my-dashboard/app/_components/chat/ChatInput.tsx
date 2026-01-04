@@ -6,11 +6,15 @@ import { UserMessage } from './UserMessage'
 import { AIMessage } from './AIMessage'
 import { getAuthToken } from '@/app/_lib/client-auth'
 import { StreamEvent } from '@/app/_types/chat'
+import { ChartConfig } from '@/app/_types/chart'
 
 interface Message {
   id: string
   role: 'user' | 'ai'
   content: string
+  metadata?: {
+    chart?: ChartConfig
+  }
 }
 
 interface ChatInputProps {
@@ -48,11 +52,18 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
 
       if (response.ok) {
         const { messages: loadedMessages } = await response.json()
-        setMessages(loadedMessages.map((msg: any) => ({
-          id: msg.message_id,
-          role: msg.role,
-          content: msg.content,
-        })))
+        setMessages(loadedMessages.map((msg: any) => {
+          const metadata = msg.metadata 
+            ? (typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata)
+            : undefined
+          
+          return {
+            id: msg.message_id,
+            role: msg.role,
+            content: msg.content,
+            metadata,
+          }
+        }))
       }
     } catch (error) {
       console.error('Error loading messages:', error)
@@ -172,10 +183,39 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
                     ? { ...msg, content: msg.content + event.content }
                     : msg
                 ))
+              } else if (event.type === 'chart') {
+                console.log('[FRONTEND] Chart event received:', event.content)
+                setMessages((prev) => prev.map((msg) => 
+                  msg.id === tempAIMessageId
+                    ? { ...msg, metadata: { ...msg.metadata, chart: event.content } }
+                    : msg
+                ))
               } else if (event.type === 'done') {
-                // Reload messages to get the final saved versions from DB
+                // Reload messages to get the final saved versions from DB with metadata
                 if (currentConversationId) {
-                  await loadMessages(currentConversationId)
+                  const { messages: loadedMessages } = await fetch(`/api/conversations/${currentConversationId}/messages`, {
+                    headers: {
+                      'Authorization': `Bearer ${getAuthToken()}`,
+                    },
+                  }).then(res => res.json())
+                  
+                  // Use loaded messages with metadata from DB
+                  setMessages(loadedMessages.map((msg: any) => {
+                    const metadata = msg.metadata 
+                      ? (typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata)
+                      : undefined
+                    
+                    if (metadata?.chart) {
+                      console.log('[FRONTEND] Loaded message with chart metadata:', metadata.chart)
+                    }
+                    
+                    return {
+                      id: msg.message_id,
+                      role: msg.role,
+                      content: msg.content,
+                      metadata,
+                    }
+                  }))
                 }
               } else if (event.type === 'error') {
                 console.error('Stream error:', event.content)
@@ -258,7 +298,7 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
                 msg.role === 'user' ? (
                   <UserMessage key={msg.id} content={msg.content} />
                 ) : (
-                  <AIMessage key={msg.id} content={msg.content} />
+                  <AIMessage key={msg.id} content={msg.content} metadata={msg.metadata} />
                 )
               ))}
               <div ref={messagesEndRef} />

@@ -2,15 +2,21 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { ChartConfig } from '@/app/_types/chart'
+import { ChartRenderer } from './ChartRenderer'
 
 interface AIMessageProps {
   content: string
+  metadata?: {
+    chart?: ChartConfig
+  }
 }
 
-export function AIMessage({ content }: AIMessageProps) {
+export function AIMessage({ content, metadata }: AIMessageProps) {
   return (
     <div className="flex justify-start">
       <div className="px-4 py-2 max-w-[80%]">
+        {metadata?.chart && <ChartRenderer config={metadata.chart} />}
         <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
