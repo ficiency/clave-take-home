@@ -21,12 +21,61 @@ interface ChatInputProps {
   conversationId?: string | null
 }
 
+function useTypingEffect() {
+  const [displayText, setDisplayText] = useState('')
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [isDeleting, setIsDeleting] = useState(false)
+  
+  const texts = ['Clave Team', 'Mateo', 'Vale', 'Carlos']
+  const typingSpeed = 100
+  const deletingSpeed = 50
+  const pauseAfterComplete = 2000
+  const pauseAfterDelete = 500
+
+  useEffect(() => {
+    const currentText = texts[currentIndex]
+    let timeout: NodeJS.Timeout
+
+    if (!isDeleting) {
+      // Typing
+      if (displayText.length < currentText.length) {
+        timeout = setTimeout(() => {
+          setDisplayText(currentText.slice(0, displayText.length + 1))
+        }, typingSpeed)
+      } else {
+        // Complete typing, pause then start deleting
+        timeout = setTimeout(() => {
+          setIsDeleting(true)
+        }, pauseAfterComplete)
+      }
+    } else {
+      // Deleting
+      if (displayText.length > 0) {
+        timeout = setTimeout(() => {
+          setDisplayText(displayText.slice(0, -1))
+        }, deletingSpeed)
+      } else {
+        // Complete deleting, move to next text
+        timeout = setTimeout(() => {
+          setIsDeleting(false)
+          setCurrentIndex((prev) => (prev + 1) % texts.length)
+        }, pauseAfterDelete)
+      }
+    }
+
+    return () => clearTimeout(timeout)
+  }, [displayText, currentIndex, isDeleting])
+
+  return displayText
+}
+
 export function ChatInput({ conversationId: propConversationId }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationId, setConversationId] = useState<string | null>(propConversationId || null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const typingText = useTypingEffect()
 
   // Load messages when conversationId changes
   useEffect(() => {
@@ -80,6 +129,15 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (message.trim()) {
+        handleSubmit(e as any)
+      }
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -254,7 +312,7 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
               className="h-8 w-8 shrink-0"
             />
             <span>
-              <span className="font-borel">hello Clave Team!</span>
+               <span className="font-borel">hello {typingText}</span>!
             </span>
           </p>
           <form
@@ -266,6 +324,7 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
                 ref={textareaRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="Ask anything..."
                 rows={1}
                 className="w-full resize-none border-0 bg-transparent text-sm focus:outline-none focus:ring-0"
@@ -276,12 +335,12 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
                   type="submit"
                   size="icon"
                   disabled={!message.trim()}
-                  className="h-8 w-8 shrink-0 bg-black text-white hover:bg-black/90 disabled:opacity-50"
+                  className="h-8 w-8 shrink-0 rounded-full bg-black text-white hover:bg-black/90 disabled:opacity-50"
                 >
                   <img 
                     src="/clave-icon.svg" 
                     alt="Send" 
-                    className="h-4 w-4"
+                    className="h-4 w-4 animate-rotate-constant"
                   />
                 </Button>
               </div>
@@ -315,6 +374,7 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
                   ref={textareaRef}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   placeholder="Ask anything..."
                   rows={1}
                   className="w-full resize-none border-0 bg-transparent text-sm focus:outline-none focus:ring-0"
@@ -325,12 +385,12 @@ export function ChatInput({ conversationId: propConversationId }: ChatInputProps
                     type="submit"
                     size="icon"
                     disabled={!message.trim()}
-                    className="h-8 w-8 shrink-0 bg-black text-white hover:bg-black/90 disabled:opacity-50"
+                    className="h-8 w-8 shrink-0 rounded-full bg-black text-white hover:bg-black/90 disabled:opacity-50"
                   >
                     <img 
                       src="/clave-icon.svg" 
                       alt="Send" 
-                      className="h-4 w-4"
+                      className="h-4 w-4 animate-rotate-constant"
                     />
                   </Button>
                 </div>

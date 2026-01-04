@@ -129,4 +129,17 @@
   .font-borel {
     font-family: var(--font-borel);
   }
+  
+  @keyframes rotate-constant {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  
+  .animate-rotate-constant {
+    animation: rotate-constant 3s linear infinite;
+  }
 }
