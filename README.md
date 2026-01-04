@@ -2,100 +2,230 @@
 
 > **Solution Submission** - This repository contains my implementation of the Clave Engineering Take-Home Assessment.  
 > **Live Demo:** [Deployed on Vercel](https://clave-take-home.vercel.app)  
-> **Original Challenge:** [clave-take-home](https://github.com/vale-clave/clave-take-home)
+> **Credentials:** `challenge@tryclave.ai` / `123`
 
-A natural language analytics dashboard for restaurant data, consolidating information from multiple POS systems (DoorDash, Square, Toast) and enabling AI-powered insights through conversational queries.
+---
 
-## Table of Contents
+## The Problem: Three Sources, One Truth
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Data Pipeline](#data-pipeline)
-- [Web Application](#web-application)
-- [Database Schema](#database-schema)
-- [Features](#features)
-- [Future Improvements](#future-improvements)
+DoorDash, Square, and Toast each expose their own data models. Hundreds of fields. Some shared, many unique. Different formats, different semantics, different quirks.
 
-## Overview
+The challenge isn't just storing the data—it's designing a system that:
+- Preserves fidelity (never lose data)
+- Enables efficient analytics (query what matters)
+- Simplifies AI interactions (reduce token overhead)
+- Adapts over time (schema evolution without breaking)
 
-This project implements a complete data engineering and AI integration solution for restaurant analytics. It processes messy, multi-source JSON data into a clean, normalized database, then provides an intelligent chat interface where users can query their data using natural language.
+This document explains the decisions that shaped the architecture.
 
-**Key Capabilities:**
-- Multi-source data ingestion (DoorDash, Square, Toast POS)
-- Data normalization and cleaning
-- Medallion architecture for scalable data processing
-- AI-powered natural language query interface
-- Dynamic visualization generation (charts, tables, metrics)
-- Real-time streaming responses
+---
 
-## Architecture
+## Core Decision: Medallion Architecture
 
-The solution follows a **Medallion Architecture** (Bronze → Silver → Gold) pattern, optimizing for both data quality and AI query efficiency.
+**Why Medallion?** Because the problem requires three different levels of abstraction.
 
-### Bronze Layer (Raw)
-Stores original JSON from all sources in the `raw_data` table. Preserves complete audit trail and enables reprocessing without data loss. No transformation—pure preservation.
+### Bronze: The Immutable Record
 
-### Silver Layer (Core)
-Normalized, production-ready tables (`locations`, `orders`, `order_items`) containing fields shared across all sources. Source-specific metadata stored in JSONB `metadata` columns to avoid nullable columns and wasted space. Optimized for standard analytics queries.
+Every JSON file from every source is stored exactly as received. No cleaning, no normalization, no assumptions.
 
-### Gold Layer (Curated)
-AI-optimized VIEWs (`ai_orders`, `ai_order_items`) that flatten JSONB metadata into columns and pre-resolve JOINs. Simplifies AI queries, reduces token usage, and improves response times.
+**Decision rationale:** When upstream schemas change (they will) or transformation logic has bugs (it will), Bronze becomes the recovery mechanism. Storage cost is trivial compared to the cost of lost data.
 
-**Benefits:**
-- Evolution-ready: frequently accessed metadata fields can be promoted from JSONB to core columns
-- Token-efficient: AI queries simplified views instead of complex JSONB extraction
-- Maintainable: clear separation between raw, processed, and curated data
+**Trade-off:** We pay storage for insurance. Acceptable.
 
-## Tech Stack
+### Silver: The Normalized Foundation
 
-### Backend / ETL
-- **Python 3.12+** - Data processing and transformation
-- **Pydantic** - Data validation and schema enforcement
-- **Supabase (PostgreSQL)** - Primary database
-- **PostgreSQL** - Direct connection for AI agent queries
+Three tables. Only fields shared across multiple sources. Everything else goes into JSONB `metadata`.
 
-### Frontend / Web Application
-- **Next.js 16** (App Router) - React framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **shadcn/ui** - UI components
-- **Recharts** - Chart visualization library
+**Decision rationale:** Adding nullable columns for source-specific fields creates two problems: (1) most rows have NULLs, wasting space and complicating queries, (2) schema changes require migrations for fields that may rarely be queried.
 
-### AI / ML
-- **LangChain** - Agent orchestration
-- **OpenAI GPT-4** - Language model
-- **LangChain Tools** - SQL execution and chart generation
+JSONB `metadata` avoids both. The schema stays stable. Source-specific fields remain queryable, just not as convenient.
 
-### Infrastructure
-- **Supabase** - Database, authentication, API
+**Trade-off:** JSONB extraction adds complexity to queries. But most analytics queries use shared fields anyway. The inconvenience is isolated to edge cases.
 
-## Project Structure
+### Gold: The AI Optimization Layer
 
-```
-clave-take-home/
-├── etl/                          # Data pipeline
-│   ├── extractors/               # Raw data extraction
-│   ├── transformers/             # Data transformation
-│   ├── catalog/                  # Item catalog (normalization)
-│   ├── schemas/                  # Pydantic models
-│   └── data/sources/             # Raw JSON source files
-│
-├── my-dashboard/                 # Next.js web application
-│   ├── app/
-│   │   ├── (dashboard)/          # Dashboard routes
-│   │   ├── api/                  # API routes (chat, auth, conversations)
-│   │   ├── _components/          # React components
-│   │   ├── _lib/                 # Utilities (agent, db, auth)
-│   │   └── _types/               # TypeScript types
-│   └── components/ui/            # shadcn/ui components
-│
-└── docs/                         # Documentation
-    ├── EXAMPLE_QUERIES.md        # Query examples
-    └── SCHEMA_HINTS.md           # Schema documentation
-```
+Two VIEWs that flatten JSONB and pre-resolve JOINs.
+
+**Decision rationale:** When an AI agent needs to query data, every token counts. Complex JSONB paths like `metadata->>'payment_type'` consume tokens in prompts. Pre-joining tables means the agent writes simpler queries.
+
+But here's the key insight: VIEWs don't store data. If a field becomes frequently queried, we promote it from JSONB to a core column. The view adapts. No data migration needed.
+
+**Trade-off:** VIEWs add a query planning step. But PostgreSQL optimizes this transparently. The AI simplicity wins.
+
+---
+
+## Data Pipeline: Extract, Transform, Load (with Intent)
+
+### Extract: Dumb Ingestion
+
+Read JSON. Insert into `raw_data`. That's it.
+
+**Decision rationale:** Ingestion should be fast and reliable. Complexity lives downstream. If extraction logic is complex, every schema change breaks it. Keep it simple.
+
+**Source Files:**
+- `doordash_orders.json` - DoorDash orders
+- `square/catalog.json`, `square/orders.json`, `square/payments.json`, `square/locations.json` - Square POS data
+- `toast_pos_export.json` - Toast POS data
+
+### Transform: The Catalog Pattern
+
+A pre-built `item_catalog.json` maps source IDs to normalized names and categories. Built once during onboarding, updated when menus change.
+
+**Decision rationale:** The alternative—parsing and normalizing item names on every pipeline run—is expensive and error-prone. Typos, emojis, variations all require regex and heuristics. The catalog eliminates guesswork.
+
+The catalog is static by design. New products require manual updates. For franchises with standardized menus, this is acceptable. The trade-off: occasional manual work for guaranteed data quality on every order.
+
+**Transformation Steps:**
+1. **Locations** - Extract and normalize location data
+2. **Orders** - Transform orders with FK lookups to locations
+3. **Order Items** - Process items with catalog lookups for normalized names/categories
+4. **Metadata Enrichment** - Populate JSONB `metadata` columns with source-specific fields
+
+**Key Transformations:**
+- Status normalization ("DELIVERED" → "completed")
+- Fulfillment method mapping ("MERCHANT_DELIVERY" → "DELIVERY")
+- Money value handling (already in cents)
+- Catalog-based item name/category normalization
+- Source-specific field extraction to JSONB
+
+**Implementation Note:** The pipeline leverages fundamental DSA concepts for efficiency—dictionaries (hash maps) for O(1) catalog lookups, dependency graphs for transformation ordering, and set operations for deduplication and validation.
+
+### Load: Validation at the Gate
+
+Pydantic schemas validate every record before insertion.
+
+**Decision rationale:** Database constraints catch errors too late. Validation at the transform layer catches errors early, with clear messages. Failed records don't create partial data states.
+
+### Reprocessability
+
+The entire pipeline is rerunnable. Truncate downstream tables, re-execute transforms—Bronze layer preserves everything.
+
+---
+
+## The AI Agent: Intelligence with Guardrails
+
+### Architecture Choice: LangChain Agent with Tools
+
+**Decision rationale:** The agent needs to (1) understand natural language, (2) generate SQL, (3) execute queries, (4) format results, (5) generate visualizations. This is a multi-step process with branching logic.
+
+LangChain's agent pattern handles this elegantly. The agent iterates until it solves the user's request. It can call tools, see results, and try again if needed.
+
+### Tool 1: SQL Execution with Validation
+
+The agent generates SQL. But it never executes directly.
+
+**Decision rationale:** LLMs are unpredictable. They might generate valid SQL that's dangerous (`DROP TABLE orders`), or invalid SQL that crashes queries. Defense-in-depth requires validation.
+
+**Validation layer:**
+- Only `SELECT` statements (or `WITH ... SELECT` CTEs)
+- Blacklist of dangerous keywords (`DELETE`, `DROP`, `INSERT`, `UPDATE`, etc.)
+- Whitelist of allowed tables
+- Direct PostgreSQL connection (bypasses Supabase API rate limits)
+
+**Trade-off:** Validation adds latency. But the security and reliability wins are non-negotiable.
+
+### Tool 2: Chart Configuration (Not Generation)
+
+The agent generates chart configurations. React components render them.
+
+**Decision rationale:** LLMs can't reliably generate SVG or React components. They might hallucinate props, create invalid layouts, or produce inconsistent styling. 
+
+Instead, the agent populates pre-defined chart types with data. The chart components are deterministic—same input, same output. No surprises.
+
+**Supported Chart Types:** bar, bar-horizontal, bar-grouped, line, line-multi, pie, card, table
+
+**Trade-off:** Limited chart flexibility. But reliability and consistency win.
+
+Also, temperature set to 0.3 for consistency, not creativity.
+
+### Context Management
+
+The last 5 messages are loaded as context. This is a deliberate limit—too much history dilutes relevance, too little loses nuance. The agent receives conversation history as LangChain messages, enabling multi-turn interactions without losing thread.
+
+---
+
+## Web Application: Maximum Determinism
+
+**Philosophy:** Trust the types. Validate the inputs. Render predictably.
+
+### Type Safety First
+
+TypeScript everywhere. Every API response, database row, component prop is typed.
+
+**Decision rationale:** Runtime errors are expensive. Type errors surface at build time. This catches bugs early and makes refactoring safe.
+
+### Deterministic Rendering
+
+Chart components accept a `ChartConfig` type. Zod validates it. Invalid configurations are rejected before rendering.
+
+**Decision rationale:** When data is invalid, fail early with clear errors. Don't render partial charts or broken layouts.
+
+### State Management: Database as Source of Truth
+
+Conversation history lives in the database, not component state.
+
+**Decision rationale:** Component state is ephemeral. Database state persists. When a user refreshes, they see their history. When they switch conversations, context is preserved.
+
+### Architecture: Next.js App Router
+
+- Server-side rendering for performance
+- Client components for interactivity
+- API routes for backend logic
+- `/api/chat` - Streaming chat endpoint with SSE
+- `/api/auth/login` - Authentication
+- `/api/conversations` - Conversation management
+
+---
+
+## Database Schema Decisions
+
+### UUIDs Over Integers
+
+All primary keys are UUIDs.
+
+**Decision rationale:** Multi-source data requires collision-free IDs. UUIDs eliminate the risk of ID conflicts when merging data from different sources.
+
+### Money in Cents
+
+All monetary values stored as integers (cents).
+
+**Decision rationale:** Floating-point arithmetic introduces rounding errors. Integers eliminate this. Conversion to dollars happens at display time.
+
+### Status Normalization
+
+All status values normalized to lowercase: `"completed"`, `"cancelled"`, `"voided"`, `"deleted"`.
+
+**Decision rationale:** Sources use different formats (`"DELIVERED"`, `"COMPLETED"`, `"Delivered"`). Normalization simplifies queries and reduces token usage in AI prompts.
+
+### Schema Structure
+
+**Silver Layer Tables:**
+- `locations` - location_id (UUID), source_name, name, address fields, timezone
+- `orders` - order_id (UUID), location_id (FK), source_order_id, timestamps, status, fulfillment_method, monetary amounts, metadata (JSONB)
+- `order_items` - order_item_id (UUID), order_id (FK), item_name, category, quantities, prices
+
+**Gold Layer Views:**
+- `ai_orders` - Flattened view with pre-joined locations and extracted metadata columns
+- `ai_order_items` - Flattened view with pre-joined order and location context
+
+**Raw Layer:**
+- `raw_data` - raw_id (UUID), source_name, entity_type, source_entity_id, data (JSONB)
+
+---
+
+## Technical Stack: Deliberate Choices
+
+**Python 3.12+** for ETL: Rich ecosystem for data processing, strong typing with Pydantic.
+
+**Next.js 16 (App Router)** for web app: Server-side rendering for performance, API routes for backend logic, TypeScript for type safety.
+
+**LangChain** for agent orchestration: Battle-tested patterns for multi-step AI workflows.
+
+**Recharts** for visualizations: React-native, deterministic rendering, accessible.
+
+**Zod** for validation: Runtime type validation that matches TypeScript types.
+
+---
 
 ## Getting Started
 
@@ -174,167 +304,82 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 **Production Deployment:**
 The application is deployed on Vercel and available at: [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)
 
-## Data Pipeline
+---
 
-### Extract
-Reads JSON files from `etl/data/sources/` and inserts raw data into the `raw_data` table. Each entity (location, order, payment) gets its own row with source metadata. No transformation—pure preservation.
+## Project Structure
 
-**Source Files:**
-- `doordash_orders.json` - DoorDash orders
-- `square/catalog.json`, `square/orders.json`, `square/payments.json`, `square/locations.json` - Square POS data
-- `toast_pos_export.json` - Toast POS data
+```
+clave-take-home/
+├── etl/                          # Data pipeline
+│   ├── extractors/               # Raw data extraction
+│   ├── transformers/             # Data transformation
+│   ├── catalog/                  # Item catalog (normalization)
+│   ├── schemas/                  # Pydantic models
+│   └── data/sources/             # Raw JSON source files
+│
+├── my-dashboard/                 # Next.js web application
+│   ├── app/
+│   │   ├── (dashboard)/          # Dashboard routes
+│   │   ├── api/                  # API routes (chat, auth, conversations)
+│   │   ├── _components/          # React components
+│   │   ├── _lib/                 # Utilities (agent, db, auth)
+│   │   └── _types/               # TypeScript types
+│   └── components/ui/            # shadcn/ui components
+│
+└── docs/                         # Documentation
+    ├── EXAMPLE_QUERIES.md        # Query examples
+    └── SCHEMA_HINTS.md           # Schema documentation
+```
 
-### Transform
-Multi-stage transformation pipeline with dependency management:
-
-1. **Locations** - Extract and normalize location data
-2. **Orders** - Transform orders with FK lookups to locations
-3. **Order Items** - Process items with catalog lookups for normalized names/categories
-4. **Metadata Enrichment** - Populate JSONB `metadata` columns with source-specific fields
-
-**Key Transformations:**
-- Status normalization ("DELIVERED" → "completed")
-- Fulfillment method mapping ("MERCHANT_DELIVERY" → "DELIVERY")
-- Money value handling (already in cents)
-- Catalog-based item name/category normalization
-- Source-specific field extraction to JSONB
-
-**Item Catalog:**
-A pre-built catalog (`etl/catalog/item_catalog.json`) maps source-specific item IDs to normalized names and categories. Built during onboarding, updated when menus change. Enables clean data insertion without per-run parsing or regex.
-
-### Load
-Validates data using Pydantic schemas before insertion. Reports counts and errors per stage for transparency.
-
-### Reprocessability
-The entire pipeline is rerunnable. Truncate downstream tables, re-execute transforms—Bronze layer preserves everything.
-
-## Web Application
-
-### Features
-
-**Natural Language Query Interface**
-- Chat-based interface for asking questions in plain English
-- Real-time streaming responses
-- Conversation history persistence
-
-**AI Agent**
-- LangChain-powered agent with tools for SQL execution and chart generation
-- Context-aware responses using conversation history
-- Automatic query generation based on user intent
-
-**Dynamic Visualizations**
-- Automatically generates appropriate chart types (bar, line, pie, table, card)
-- Supports multiple data series and complex comparisons
-- Responsive, interactive charts using Recharts
-
-**Conversation Management**
-- Persistent conversations with message history
-- Sidebar navigation for conversation switching
-- Automatic conversation creation on first message
-
-### Architecture
-
-**Frontend (Next.js App Router)**
-- Server-side rendering for performance
-- Client components for interactivity
-- API routes for backend logic
-
-**API Routes**
-- `/api/chat` - Streaming chat endpoint with SSE
-- `/api/auth/login` - Authentication
-- `/api/conversations` - Conversation management
-- `/api/conversations/[id]/messages` - Message history
-
-**AI Agent Tools**
-- `execute_sql` - Validated SQL execution against PostgreSQL
-- `create_chart` - Chart configuration generation
-
-### Query Flow
-
-1. User sends natural language query
-2. AI agent interprets intent and generates SQL (if needed)
-3. SQL executed against Gold layer views (`ai_orders`, `ai_order_items`)
-4. Results processed and formatted
-5. Chart generated if visualization requested
-6. Response streamed back to user via SSE
-
-## Database Schema
-
-### Silver Layer Tables
-
-**`locations`**
-- `location_id` (UUID, PK)
-- `source_name`, `source_location_id`
-- `name`, `address_line_1`, `city`, `state`, `postal_code`, `country`, `timezone`
-
-**`orders`**
-- `order_id` (UUID, PK)
-- `location_id` (FK → locations)
-- `source_name`, `source_order_id`
-- `created_at`, `closed_at`, `status`, `fulfillment_method`
-- `subtotal`, `tax_amount`, `tip_amount`, `total_amount` (all in cents)
-- `metadata` (JSONB) - Source-specific fields
-
-**`order_items`**
-- `order_item_id` (UUID, PK)
-- `order_id` (FK → orders)
-- `source_name`, `source_order_item_id`
-- `item_name`, `category` (normalized via catalog)
-- `quantity`, `unit_price`, `total_price` (in cents)
-
-### Gold Layer Views
-
-**`ai_orders`**
-Flattened view of orders with:
-- All core order fields
-- Pre-joined location information
-- Extracted metadata fields as columns (payment_type, delivery_fee, etc.)
-
-**`ai_order_items`**
-Flattened view of order items with:
-- All core item fields
-- Pre-joined order and location context
-- Ready for analytics queries
-
-### Raw Layer
-
-**`raw_data`**
-- `raw_id` (UUID, PK)
-- `source_name`, `entity_type`, `source_entity_id`
-- `data` (JSONB) - Complete original JSON
+---
 
 ## Features
 
-✅ Multi-source data ingestion (DoorDash, Square, Toast)
-✅ Data normalization and cleaning pipeline
-✅ Medallion architecture for scalable processing
-✅ Item catalog for consistent product naming
-✅ Natural language query interface
-✅ AI-powered SQL generation and execution
-✅ Dynamic chart generation (bar, line, pie, table, card)
-✅ Real-time streaming responses
-✅ Conversation history persistence
-✅ Secure authentication
-✅ Production-ready error handling
+✅ Multi-source data ingestion (DoorDash, Square, Toast)  
+✅ Data normalization and cleaning pipeline  
+✅ Medallion architecture for scalable processing  
+✅ Item catalog for consistent product naming  
+✅ Natural language query interface  
+✅ AI-powered SQL generation with security validation  
+✅ Deterministic chart rendering (bar, line, pie, table, card)  
+✅ Real-time streaming responses via SSE  
+✅ Conversation history persistence  
+✅ Secure authentication  
+✅ Production-ready error handling  
 ✅ **Deployed on Vercel** - Live demo available
+
+---
 
 ## Deployment
 
 The application is deployed on **Vercel** and accessible at:
 - **Production URL:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)
 
+### Access Credentials
+
+For evaluators and reviewers:
+- **Email:** `challenge@tryclave.ai`
+- **Password:** `123`
+
 The deployment includes:
 - Next.js application (frontend + API routes)
 - Environment variables configured for production
 - Automatic deployments on push to main branch
 
+---
+
 ## Future Improvements
 
-- **Schema Evolution:** Promote frequently accessed metadata fields from JSONB to core columns based on usage patterns
-- **Query Optimization:** Add indexes based on actual query patterns
-- **Error Recovery:** Implement retry logic and partial failure handling
-- **Monitoring:** Add observability for ETL pipeline and AI agent performance
+- **AI Observability with LangSmith:** Integrate LangSmith for comprehensive AI agent observability—tracking tool usage, query patterns, token consumption, and response quality. Use this data to drive schema evolution: promote frequently accessed metadata fields from JSONB to core columns, and demote rarely queried fields back to JSONB.
+
+- **ETL as a Service:** Evolve the ETL pipeline into a production-grade web service using FastAPI. Redis would serve as both queue system and message broker, enabling efficient and scalable handling of incoming data streams. This architecture supports distributed processing, retry mechanisms, and graceful handling of backpressure.
+
+- **Query Optimization:** Add indexes based on actual query patterns observed through production usage
+
+- **Error Recovery:** Implement retry logic and partial failure handling for the ETL pipeline
+
 - **Caching:** Cache common query results to reduce database load
+
 - **Export:** Add data export functionality (CSV, PDF reports)
+
 - **Advanced Visualizations:** Support for more chart types (heatmaps, scatter plots)
-- **Multi-tenant:** Support for multiple restaurant accounts with data isolation
