@@ -2,7 +2,10 @@ import { NextRequest } from 'next/server'
 import { getAccountIdFromRequest } from '@/app/_lib/auth'
 import { getSupabaseAdmin } from '@/app/_lib/supabase/server'
 import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, AIMessage } from '@langchain/core/messages'
+import { HumanMessage, AIMessage, ToolMessage } from '@langchain/core/messages'
+import { createAgent } from 'langchain'
+import { SYSTEM_PROMPT } from '@/app/_lib/agent/prompts'
+import { createExecuteSQLTool } from '@/app/_lib/agent/tools'
 import { StreamEvent } from '@/app/_types/chat'
 
 export async function POST(request: NextRequest) {
@@ -50,7 +53,8 @@ export async function POST(request: NextRequest) {
       content: message.trim(),
     })
 
-    // 5. Obtener últimos 5 mensajes para contexto (ordenados por fecha ascendente)
+    // 5. Obtener últimos 5 mensajes para contexto (incluye el que acabamos de guardar)
+    // Ordenados por fecha descendente para luego revertir
     const { data: historyMessages, error: historyError } = await supabaseAdmin
       .from('messages')
       .select('role, content')
@@ -71,11 +75,19 @@ export async function POST(request: NextRequest) {
           : new AIMessage(msg.content)
       )
 
-    // 6. Inicializar modelo con streaming
+    // 6. Inicializar modelo y crear agente con tools
     const model = new ChatOpenAI({
       modelName: 'gpt-5.2',
       streaming: true,
       temperature: 0.3,
+    })
+
+    const tools = [createExecuteSQLTool()]
+
+    const agent = createAgent({
+      model,
+      tools,
+      systemPrompt: SYSTEM_PROMPT,
     })
 
     // 7. Crear ReadableStream para SSE
@@ -90,17 +102,25 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          // Stream de LangChain
-          const responseStream = await model.stream(langchainMessages)
+          console.log('[AI REQUEST] Flag crossed - Starting agent stream')
+          
+          // Stream del agente
+          const responseStream = await agent.stream({
+            messages: langchainMessages,
+          }, {
+            streamMode: 'messages',
+          })
 
-          for await (const chunk of responseStream) {
-            const chunkContent = chunk.content
-            if (chunkContent) {
-              const content = typeof chunkContent === 'string' 
-                ? chunkContent 
-                : String(chunkContent)
-              fullResponse += content
-              sendEvent({ type: 'text', content })
+          for await (const [messageChunk, metadata] of responseStream) {
+            // Filtrar ToolMessage - solo streamear mensajes de AI
+            if (messageChunk instanceof ToolMessage) {
+              continue
+            }
+            
+            const chunkContent = messageChunk.content
+            if (chunkContent && typeof chunkContent === 'string') {
+              fullResponse += chunkContent
+              sendEvent({ type: 'text', content: chunkContent })
             }
           }
 
