@@ -1,9 +1,10 @@
-# Clave Take-Home Challenge Solution
+# Clave Take-Home Challenge Solution 🚀
 
-This document explains the reasoning, design decisions, and trade-offs behind my submission. 
+Hello Clave team!
 
-Rather than focusing only on the final result, it highlights how the system was designed, why certain choices were made, and what was intentionally left out.
+Below, I walk through the technical reasoning behind key architectural decisions, why these choices were made, and how the system was designed.
 
+You can directly test the app here:
 **Deployment:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)  
 **Credentials:** `challenge@tryclave.ai` / `123`
 
@@ -15,12 +16,7 @@ Rather than focusing only on the final result, it highlights how the system was 
 
 - **ETL pipeline** first ingests data as-is into the raw layer. Then, it is cleaned, transformed and loaded into the Silver layer. Rather than parsing and cleaning emojis or variations in product names and categories, each original product's ID was used to build a **catalog mapping** ID → clean, standardized name and category. **Pydantic validation** ensures only correct records are loaded, and fundamental **DSA concepts** like hash maps, dependency ordering, and set operations were applied to guarantee efficiency and correctness.
 
-- The web app was built with **Next.js** and **TypeScript**, prioritizing **type safety**. It includes the essentials: login, chat interface, and chart components. The **AI agent**, orchestrated with **LangChain**, uses two tools to generate SQL queries and charts. It interprets user intent, produces validated SQL that passes through a **strict safety check** before querying Supabase, and then determines which chart type and data structure to use. Finally, the system formats the data, renders the chart, and returns it to the user.
-
-
-This is the briefest summary possible.
-
-If you have any questions, they're likely addressed in the detailed sections below. Use the index to navigate quickly :)
+- The web app was built with **Next.js** and **TypeScript**, prioritizing **type safety**. It includes the essentials: login, chat interface, and chart components. The **AI agent** (LangChain) interprets user intent, generates validated SQL queries, and creates charts using pre-defined components.
 
 **Table of Contents**
 
@@ -39,7 +35,7 @@ If you have any questions, they're likely addressed in the detailed sections bel
 
 Three different data sources: DoorDash, Square, and Toast. Each comes with its own schema, hundreds of fields, different naming conventions, formats, and inconsistencies.
 
-The challenge wasn’t just storing data. The goal was to build a system that allows consistent data integrity, reliable and relevant business analytics, and efficient AI usage.
+The goal was to build a system that ensures consistent data integrity, reliable business analytics, and efficient AI usage.
 
 Questions I asked myself before writing a single line of code:
 
@@ -72,11 +68,9 @@ The system is built on **Supabase**, and the database follows a **Medallion Arch
 
     - **`ai_order_items`**: includes core item fields, order context (status, timestamps, fulfillment method), and location context, all pre-joined.
 
-These views simplify AI SQL queries, reducing **token usage** and execution complexity, while keeping the underlying tables flexible. By pre-flattening JSONB and pre-joining relations, the AI agent can query what it needs efficiently, without runtime joins or complex JSON path expressions.
+These views simplify AI SQL queries and reduce execution complexity by pre-flattening JSONB and pre-joining relations, enabling efficient queries without runtime joins or complex JSON path expressions.
 
 This design also allows the schema to evolve based on **real AI usage patterns**. Fields and joins frequently queried by the agent can be **promoted** into Gold views, while rarely used ones are **moved** to JSONB or removed from optimized paths.
-
-In the [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) section, I walk **through** how LangSmith can provide the visibility needed to observe user-to-AI interactions and how the AI queries data, enabling continuous optimization of schemas, views, and query cost over time.
 
 ### Key Schema Decisions
 
@@ -88,12 +82,8 @@ In the [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) sectio
 
 - **Relationships and indexes** designed to support fast, safe, and cost-effective queries for both analytics and AI.
 
-This design ensures that all AI queries are accurate and efficient.
-
 
 ## 3. Designing the Data Pipeline
-
-Before thinking about AI or dashboards, the priority was ingesting and normalizing data reliably.
 
 ### Extract – Keep it Simple
 
@@ -131,36 +121,31 @@ Before inserting this into the Silver layer, every record is validated with **Py
 
 ## 4. Web Application
 
-The web app was built with **Next.js**, **TypeScript**, and **shadCN UI**, prioritizing **type safety** and rapid development. It includes login, a chat interface, and a side panel with a button to create new AI conversations and a list of existing ones.
+The web app was built with **Next.js**, **TypeScript**, and **shadCN UI**, prioritizing **type-safe design** and rapid development. It includes login, chat interface, and conversation management.
 
 > "Design is how it works." — Steve Jobs
 
-UI/UX was built first to define how users interact and what data they need, letting backend and AI logic follow to serve the interface, not the other way around. Also, the app is **responsive and mobile-friendly**, designed for users who will frequently access it from various devices.
+UI/UX was built first to define user interactions, letting backend and AI logic follow. The app is **responsive and mobile-friendly**, designed for frequent access from various devices.
 
 The app was deployed on **Vercel**, connected directly to GitHub, with environment variables configured via Vercel's app settings.
-
-Not much else to add here. See ["What I'd Do If I Had More Time"](#7-what-id-do-if-i-had-more-time) for potential app features.
 
 
 ## 5. AI Agent, Queries and Charts
 
-**LangChain** was chosen for its simplicity in building agents and its potential future uses (see [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) section). The agent uses **GPT-5-2** for its superior code generation skills and also features **automatic retries**, **streaming output**, and two tools: **SQL-query** and **create chart**.
+**LangChain** was chosen for its simplicity in building agents and potential future uses. The agent uses **GPT-5-2** for code generation and features **automatic retries**, **streaming output**, and two tools: **SQL-query** and **create chart**.
 
-### Interaction Flow
-
-The interaction flow is straightforward: the user types a request → the agent interprets intent → generates SQL which passes a strict safety validation → queries the Gold-layer views or Silver layer in Supabase → decides which chart type to use → formats the data → renders the chart in the UI.
 
 ### System Prompt & Schema Documentation
 
-The agent operates with a comprehensive **system prompt** that includes the complete database schema (Silver and Gold layers), field mappings, normalization rules (status values are lowercase, money in cents), JSONB metadata fields, SQL guidelines (prefer Gold views, date functions), and time awareness patterns ("yesterday", "this week", etc.). This ensures the agent understands the data structure and writes correct queries from the start.
+The agent operates with a comprehensive **system prompt** that includes the complete database schema (Silver and Gold layers), normalization rules, SQL guidelines (prefer Gold views), and time awareness patterns. This ensures correct queries from the start.
 
 ### SQL Safety Validation
 
-Before execution, every SQL query passes through **strict validation**: only `SELECT` statements are allowed (including CTEs), dangerous keywords are blocked via regex (`DELETE`, `DROP`, `INSERT`, `UPDATE`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT`, `REVOKE`), and queries must reference whitelisted tables (`ai_orders`, `ai_order_items`, `orders`, `order_items`, `locations`). Validation happens before database connection, preventing destructive operations. Failed validations return clear errors for agent retry.
+Every SQL query passes through **strict validation**: only `SELECT` statements (including CTEs), whitelisted tables, and blocked destructive keywords. Validation happens before database connection, preventing destructive operations.
 
 ### Chart Generation
 
-Chart generation uses pre-defined, **type-safe React components** (**Recharts**) with deterministic configurations. The agent receives a tool that accepts structured chart configs (validated via **Zod**), including types: **bar** (horizontal, grouped), **line** (single, multi-series), **pie**, **card** (single metrics), and **table**. The agent selects the appropriate type based on data structure, formats monetary values from cents to dollars, and populates the configuration. The frontend renders using these validated configs for consistent visualizations.
+Chart generation uses pre-defined, **type-safe React components** (**Recharts**) with deterministic configurations. The agent receives a tool that accepts structured chart configs (validated via **Zod**) for types: **bar**, **line**, **pie**, **card**, and **table**. The agent selects the appropriate type, formats monetary values, and populates the configuration. The frontend renders using these validated configs.
 
 ## 6. Live App & Credentials
 
@@ -170,25 +155,20 @@ Chart generation uses pre-defined, **type-safe React components** (**Recharts**)
 - Email: `challenge@tryclave.ai`
 - Password: `123`
 
-You can interact directly with the AI chat, or open an existing conversation from the side panel, which already demonstrates the agent's behavior using the example queries provided in `/docs`.
+You can interact directly with the AI chat or open existing conversations from the side panel with example queries from `/docs`.
 
 
 ## 7. What I'd Do If I Had More Time
 
 ### LangSmith for AI Observability
 
-**LangSmith** provides crucial visibility: we can see what queries users send to the agent, track **response latency**, monitor **token costs**, and review the **agentic SQL queries**. This is especially valuable because the database architecture is designed to evolve based on real usage patterns—patterns that can directly translate to cost reduction and building something customers genuinely fall in love with.
+**LangSmith** provides crucial visibility: user queries, **response latency**, **token costs**, and **agentic SQL queries**. This enables continuous optimization of schemas, views, and query cost based on real usage patterns.
 
 Additionally, the **evaluation suite** enables systematic testing of agent behavior across different query types, ensuring reliability as the system scales.
 
 ### ETL Pipeline as a Web Service
 
-Transform the ETL pipeline into a scalable web service using **FastAPI** and **Redis** for job queuing. This would allow:
-
-- On-demand data ingestion from new sources, using **Fivetran** as a connector.
-- Scheduled transformations and catalog updates
-- API endpoints for triggering pipeline runs
-- Better error handling and retry mechanisms
+Transform the ETL pipeline into a scalable web service using **FastAPI** and **Redis** for job queuing: on-demand data ingestion from new sources (using **Fivetran** as a connector), scheduled transformations and catalog updates, API endpoints for triggering pipeline runs, and better error handling and retry mechanisms.
 
 ### Real-time Alerts
 
