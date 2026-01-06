@@ -7,8 +7,6 @@ Rather than focusing only on the final result, it highlights how the system was 
 **Deployment:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)  
 **Credentials:** `challenge@tryclave.ai` / `123`
 
-You can interact directly with the AI chat, or open an existing conversation from the side panel, which already demonstrates the agent's behavior using the example queries provided in `/docs/EXAMPLE_QUERIES.md`.
-
 ---
 
 ## TL;DR
@@ -137,11 +135,11 @@ The web app was built with **Next.js**, **TypeScript**, and **shadCN UI**, prior
 
 > "Design is how it works." — Steve Jobs
 
-**UI/UX-first approach:** UI/UX was built first to define how users interact and what data they need, letting backend and AI logic follow to serve the interface, not the other way around. Also, the app is **responsive and mobile-friendly**, designed for users who will frequently access it from various devices.
+UI/UX was built first to define how users interact and what data they need, letting backend and AI logic follow to serve the interface, not the other way around. Also, the app is **responsive and mobile-friendly**, designed for users who will frequently access it from various devices.
 
 The app was deployed on **Vercel**, connected directly to GitHub, with environment variables configured via Vercel's app settings.
 
-Not much else to add here. See ["What I'd Do If I Had More Time"](#7-what-id-do-if-i-had-more-time) for missing and potential app features.
+Not much else to add here. See ["What I'd Do If I Had More Time"](#7-what-id-do-if-i-had-more-time) for potential app features.
 
 
 ## 5. AI Agent, Queries and Charts
