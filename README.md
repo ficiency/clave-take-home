@@ -5,6 +5,7 @@ Hello Clave team!
 Below, I walk through the technical reasoning behind key architectural decisions, why these choices were made, and how the system was designed.
 
 You can directly test the app here:
+
 **Deployment:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)  
 **Credentials:** `challenge@tryclave.ai` / `123`
 
@@ -18,7 +19,9 @@ You can directly test the app here:
 
 - The web app was built with **Next.js** and **TypeScript**, prioritizing **type safety**. It includes the essentials: login, chat interface, and chart components. The **AI agent** (LangChain) interprets user intent, generates validated SQL queries, and creates charts using pre-defined components.
 
-**Table of Contents**
+---
+
+## Table of Contents
 
 1. [Understanding the Real Problem](#1-understanding-the-real-problem)
 2. [DB & Schema Thinking](#2-db--schema-thinking)
@@ -29,6 +32,7 @@ You can directly test the app here:
 7. [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time)
 8. [Explore and run the codebase!](#8-explore-and-run-the-codebase)
 9. [Final Message](#9-final-message)
+
 
 
 ## 1. Understanding the Real Problem
