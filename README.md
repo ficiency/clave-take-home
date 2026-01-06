@@ -103,7 +103,7 @@ I read JSONs as-is and inserted them into `raw_data`.
 
 ### Transform – Maintaining Consistency
 
-A **product catalog** (`item_catalog.json`) was built to map raw product IDs to clean, normalized names and categories, avoiding parsing emojis or variations for every run. **Trade-off:** initially updates are manual when menus change, but as the system scales, handling new products or menu changes can be automated via scripts, ensuring consistent data quality with minimal manual work.
+A **product catalog** (`item_catalog.json`) was built to map raw product IDs to clean, normalized names and categories, avoiding parsing emojis, typo errors or variations for every run.
 
 Shared fields across all sources were normalized, source-specific or unusual fields were stored in **JSONB metadata**.
 
@@ -193,10 +193,6 @@ Transform the ETL pipeline into a scalable web service using **FastAPI** and **R
 ### Real-time Alerts
 
 Send **real-time alerts** when business rules are triggered from source data. The agent can reason about the situation, create actionable insights ("call to action"), and send notifications via email to the business owner's mobile device.
-
-### Fix Cursor screw-ups
-
-Yes, Cursor screw-ups. As the deadline approached, I accepted some light technical debt to finish the delivery. Specifically in the agent and charts sections, there's likely logic and code blocks that **can and should be optimized**.
 
 ### Additional Features
 
