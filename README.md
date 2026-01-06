@@ -13,11 +13,12 @@ You can interact directly with the AI chat, or open an existing conversation fro
 
 ## TL;DR
 
-- The database (supabase) is divided into three layers: **Raw**, **Silver**, and **Gold**. Raw stores the original data so it can be reprocessed if schemas evolve. Silver contains tables with clean, normalized fields that are relevant for analytics and likely to be queried by AI. Gold consists of views optimized for AI SQL queries to **reduce token usage**.
+- The db architecture (supabase) is divided into three layers: **Raw**, **Silver**, and **Gold**. Raw stores the original data so it can be reprocessed if schemas evolve. Silver contains tables with clean, normalized fields that are relevant for analytics and likely to be queried by AI. Gold consists of views optimized for AI SQL queries to **reduce token usage**.
 
-- **ETL pipeline** first ingests data as-is into the raw layer. Then, it is transformed and loaded into the Silver layer. Instead of trying to parse and clean emojis or variations in product names and categories, each product's ID was used to build a **catalog mapping** ID → clean, standardized name and category. **Pydantic validation** ensures only correct records are loaded, and fundamental **DSA concepts** like hash maps, dependency ordering, and set operations were applied to guarantee efficiency and correctness.
+- **ETL pipeline** first ingests data as-is into the raw layer. Then, it is cleaned, transformed and loaded into the Silver layer. Rather than parsing and cleaning emojis or variations in product names and categories, each original product's ID was used to build a **catalog mapping** ID → clean, standardized name and category. **Pydantic validation** ensures only correct records are loaded, and fundamental **DSA concepts** like hash maps, dependency ordering, and set operations were applied to guarantee efficiency and correctness.
 
 - The web app was built with **Next.js** and **TypeScript**, prioritizing **type safety**. It includes the essentials: login, chat interface, and chart components. The **AI agent**, orchestrated with **LangChain**, uses two tools to generate SQL queries and charts. It interprets user intent, produces validated SQL that passes through a **strict safety check** before querying Supabase, and then determines which chart type and data structure to use. Finally, the system formats the data, renders the chart, and returns it to the user.
+
 
 This is the briefest summary possible.
 
@@ -36,7 +37,7 @@ If you have any questions, they're likely addressed in the detailed sections bel
 9. [Final Message](#9-final-message)
 
 
-## 1. Understanding the Real Problem {#1-understanding-the-real-problem}
+## 1. Understanding the Real Problem
 
 Three different data sources: DoorDash, Square, and Toast. Each comes with its own schema, hundreds of fields, different naming conventions, formats, and inconsistencies.
 
@@ -44,49 +45,55 @@ The challenge wasn’t just storing data. The goal was to build a system that al
 
 Questions I asked myself before writing a single line of code:
 
-• How can one ensure that the data the AI queries is **100% correct** based on the raw data? (Most important in my opinion)  
-• Which fields are truly useful for **analytics and AI**, and which are less critical?
-• How do I handle **source-specific fields** without complicating AI SQL queries?
-• How could the **schema and DB architecture** be designed to keep AI SQL queries **efficient in cost and performance**?
-• How can the schema **scale and evolve over time**?
+- How can one ensure that the data the AI queries is **100% correct** based on the raw data? (Most important in my opinion)
+
+- Which fields are truly useful for **analytics and AI**, and which are less critical?
+
+- How do I handle **source-specific fields** without complicating AI SQL queries?
+
+- How could the **schema and DB architecture** be designed to keep AI SQL queries **efficient in cost and performance**?
+
+- How can the schema **scale and evolve over time**?
 
 
-## 2. DB & Schema Thinking {#2-db--schema-thinking}
+## 2. DB & Schema Thinking
 
 The system is built on **Supabase**, and the database follows a **Medallion Architecture** to balance data integrity, analytics needs, and AI efficiency. 
 
 ### Architecture Layers
 
-• **Raw layer**: stores all raw source data in a parsed, organized way (entities → locations, orders, payments, items), preserving data for reprocessing if schemas evolve.
+- **Raw layer**: stores all raw source data in a parsed, organized way (entities → locations, orders, payments, items), preserving data for reprocessing if schemas evolve.
 
-• **Silver layer**: contains cleaned and normalized tables with fields strictly shared across all sources. Existing tables include `accounts`, `locations`, `orders`, `order_items`, `conversations`, `messages`, and `raw_data`. `accounts` is the parent table. `conversations`, `raw_data`, and `locations` are at the second level. `orders` are children of `locations`, and `order_items` are children of `orders`. Source-specific or unusual fields are stored in a **JSONB metadata** column inside `orders`.
+- **Silver layer**: contains cleaned and normalized tables with fields strictly shared across all sources.
 
-• **Gold layer**: consists of AI-optimized **views** that flatten JSONB metadata and pre-resolve joins, making data easily queryable without complex SQL. The main views are:
+    Existing tables include `accounts`, `locations`, `orders`, `order_items`, `conversations`, `messages`, and `raw_data`. `accounts` is the parent table. `conversations`, `raw_data`, and `locations` are at the second level. `orders` are children of `locations`, and `order_items` are children of `orders`. Source-specific or unusual fields are stored in a **JSONB metadata** column inside `orders`.
 
-    • **`ai_orders`**: combines core order fields, pre-joined location info, and flattened source-specific metadata (`payment_type`, `card_brand`, `delivery_fee`, etc.).
+- **Gold layer**: consists of AI-optimized **views** that flatten JSONB metadata and pre-resolve joins, making data easily queryable without complex SQL. The main views are:
 
-    • **`ai_order_items`**: includes core item fields, order context (status, timestamps, fulfillment method), and location context, all pre-joined.
+    - **`ai_orders`**: combines core order fields, pre-joined location info, and flattened source-specific metadata (`payment_type`, `card_brand`, `delivery_fee`, etc.).
+
+    - **`ai_order_items`**: includes core item fields, order context (status, timestamps, fulfillment method), and location context, all pre-joined.
 
 These views simplify AI SQL queries, reducing **token usage** and execution complexity, while keeping the underlying tables flexible. By pre-flattening JSONB and pre-joining relations, the AI agent can query what it needs efficiently, without runtime joins or complex JSON path expressions.
 
-This design also allows the schema to evolve based on **real AI usage patterns**. Fields and joins frequently queried by the agent can be **promoted** into Gold views, while rarely used ones are **moved** to JSONB or removed from optimized paths. 
+This design also allows the schema to evolve based on **real AI usage patterns**. Fields and joins frequently queried by the agent can be **promoted** into Gold views, while rarely used ones are **moved** to JSONB or removed from optimized paths.
 
 In the [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) section, I walk **through** how LangSmith can provide the visibility needed to observe user-to-AI interactions and how the AI queries data, enabling continuous optimization of schemas, views, and query cost over time.
 
 ### Key Schema Decisions
 
-• **UUIDs** for all primary keys to prevent collisions across sources.
+- **UUIDs** for all primary keys to prevent collisions across sources.
 
-• **Monetary values** stored as integers (cents) to avoid floating-point errors.
+- **Monetary values** stored as integers (cents) to avoid floating-point errors.
 
-• **Status normalization** to unify values across sources ("completed", "cancelled", etc.).
+- **Status normalization** to unify values across sources ("completed", "cancelled", etc.).
 
-• **Relationships and indexes** designed to support fast, safe, and cost-effective queries for both analytics and AI.
+- **Relationships and indexes** designed to support fast, safe, and cost-effective queries for both analytics and AI.
 
 This design ensures that all AI queries are accurate and efficient.
 
 
-## 3. Designing the Data Pipeline {#3-designing-the-data-pipeline}
+## 3. Designing the Data Pipeline
 
 Before thinking about AI or dashboards, the priority was ingesting and normalizing data reliably.
 
@@ -103,10 +110,11 @@ A **product catalog** (`item_catalog.json`) was built to map raw product IDs to 
 Shared fields across all sources were normalized, source-specific or unusual fields were stored in **JSONB metadata**.
 
 **Transformation steps:**
-• Normalize locations
-• Transform orders with FK lookups to locations
-• Transform order items using the catalog
-• Enrich JSONB metadata with source-specific fields
+
+- Normalize locations
+- Transform orders with FK lookups to locations
+- Transform order items using the catalog
+- Enrich JSONB metadata with source-specific fields
 
 **Key transformations:** status normalization, fulfillment method mapping, monetary values stored as cents, catalog-based item normalization.
 
@@ -123,7 +131,7 @@ Before inserting this into the Silver layer, every record is validated with **Py
 **Testing:** Each transformer has unit tests (`pytest`) that validate field extraction and transformation logic using real source data. Tests ensure that all three sources (DoorDash, Square, Toast) are correctly parsed and mapped to the normalized schema, catching regressions early before data reaches the database.
 
 
-## 4. Web Application {#4-web-application}
+## 4. Web Application
 
 The web app was built with **Next.js**, **TypeScript**, and **shadCN UI**, prioritizing **type safety** and rapid development. It includes login, a chat interface, and a side panel with a button to create new AI conversations and a list of existing ones.
 
@@ -136,7 +144,7 @@ The app was deployed on **Vercel**, connected directly to GitHub, with environme
 Not much else to add here. See ["What I'd Do If I Had More Time"](#7-what-id-do-if-i-had-more-time) for missing and potential app features.
 
 
-## 5. AI Agent, Queries and Charts {#5-ai-agent-querys-and-charts}
+## 5. AI Agent, Queries and Charts
 
 **LangChain** was chosen for its simplicity in building agents and its potential future uses (see [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) section). The agent uses **GPT-5-2** for its superior code generation skills and also features **automatic retries**, **streaming output**, and two tools: **SQL-query** and **create chart**.
 
@@ -156,7 +164,7 @@ Before execution, every SQL query passes through **strict validation**: only `SE
 
 Chart generation uses pre-defined, **type-safe React components** (**Recharts**) with deterministic configurations. The agent receives a tool that accepts structured chart configs (validated via **Zod**), including types: **bar** (horizontal, grouped), **line** (single, multi-series), **pie**, **card** (single metrics), and **table**. The agent selects the appropriate type based on data structure, formats monetary values from cents to dollars, and populates the configuration. The frontend renders using these validated configs for consistent visualizations.
 
-## 6. Live App & Credentials {#6-live-app--credentials}
+## 6. Live App & Credentials
 
 **Deployment URL:** [clave-take-home.vercel.app](https://clave-take-home.vercel.app)
 
@@ -167,7 +175,7 @@ Chart generation uses pre-defined, **type-safe React components** (**Recharts**)
 You can interact directly with the AI chat, or open an existing conversation from the side panel, which already demonstrates the agent's behavior using the example queries provided in `/docs`.
 
 
-## 7. What I'd Do If I Had More Time {#7-what-id-do-if-i-had-more-time}
+## 7. What I'd Do If I Had More Time
 
 ### LangSmith for AI Observability
 
@@ -178,6 +186,7 @@ Additionally, the **evaluation suite** enables systematic testing of agent behav
 ### ETL Pipeline as a Web Service
 
 Transform the ETL pipeline into a scalable web service using **FastAPI** and **Redis** for job queuing. This would allow:
+
 - On-demand data ingestion from new sources, using **Fivetran** as a connector.
 - Scheduled transformations and catalog updates
 - API endpoints for triggering pipeline runs
@@ -187,9 +196,9 @@ Transform the ETL pipeline into a scalable web service using **FastAPI** and **R
 
 Send **real-time alerts** when business rules are triggered from source data. The agent can reason about the situation, create actionable insights ("call to action"), and send notifications via email to the business owner's mobile device.
 
-### Fix Cursor Fuckups
+### Fix Cursor screw-ups
 
-Yes, Cursor fuckups. As the deadline approached, I accepted some light technical debt to finish the delivery. Specifically in the agent and charts sections, there's likely logic and code blocks that **can and should be optimized**.
+Yes, Cursor screw-ups. As the deadline approached, I accepted some light technical debt to finish the delivery. Specifically in the agent and charts sections, there's likely logic and code blocks that **can and should be optimized**.
 
 ### Additional Features
 
@@ -197,7 +206,7 @@ Yes, Cursor fuckups. As the deadline approached, I accepted some light technical
 - **Export functionality** for generated charts and data (PDF or XLSX)
 
 
-## 8. Explore and run the codebase! {#8-explore-and-run-the-codebase}
+## 8. Explore and run the codebase!
 
 ### Project Structure
 
@@ -288,7 +297,7 @@ npm run dev
 The application will be available at `http://localhost:3000`. Make sure your Supabase database is set up with the required tables (see schema section above) and that all environment variables are configured before running either component.
 
 
-## 9. Final Message {#9-final-message}
+## 9. Final Message
 
 This solution was challenging (in the best way). Many steps I took to make the right product and technical decisions taught me something new and pushed me to grow. Still, **feedback is always welcome**—there's always a better way to do things.
 
