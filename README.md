@@ -1,6 +1,4 @@
-# Clave Take-Home Challenge Solution 🚀
-
-Hello Clave team!
+# Hello Clave team!
 
 Below, I walk through the technical reasoning behind key architectural decisions, why these choices were made, and how the system was designed.
 
@@ -11,7 +9,7 @@ You can directly test the app here:
 
 ---
 
-## TL;DR
+## TL;DR ⚡
 
 - The db architecture (supabase) is divided into three layers: **Raw**, **Silver**, and **Gold**. Raw stores the original data so it can be reprocessed if schemas evolve. Silver contains tables with clean, normalized fields that are relevant for analytics and likely to be queried by AI. Gold consists of views optimized for AI SQL queries to **reduce token usage**.
 
@@ -33,7 +31,7 @@ You can directly test the app here:
 8. [Explore and run the codebase!](#8-explore-and-run-the-codebase)
 9. [Final Message](#9-final-message)
 
-
+---
 
 ## 1. Understanding the Real Problem
 
