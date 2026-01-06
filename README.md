@@ -1,385 +1,297 @@
-# Clave Engineering Take-Home Assessment
+# Clave Take-Home Challenge Solution
 
-> **Solution Submission** - This repository contains my implementation of the Clave Engineering Take-Home Assessment.  
-> **Live Demo:** [Deployed on Vercel](https://clave-take-home.vercel.app)  
-> **Credentials:** `challenge@tryclave.ai` / `123`
+This document explains the reasoning, design decisions, and trade-offs behind my submission. 
 
----
+Rather than focusing only on the final result, it highlights how the system was designed, why certain choices were made, and what was intentionally left out.
 
-## The Problem: Three Sources, One Truth
+**Deployment:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)  
+**Credentials:** `challenge@tryclave.ai` / `123`
 
-DoorDash, Square, and Toast each expose their own data models. Hundreds of fields. Some shared, many unique. Different formats, different semantics, different quirks.
-
-The challenge isn't just storing the data—it's designing a system that:
-- Preserves fidelity (never lose data)
-- Enables efficient analytics (query what matters)
-- Simplifies AI interactions (reduce token overhead)
-- Adapts over time (schema evolution without breaking)
-
-This document explains the decisions that shaped the architecture.
+You can interact directly with the AI chat, or open an existing conversation from the side panel, which already demonstrates the agent's behavior using the example queries provided in `/docs/EXAMPLE_QUERIES.md`.
 
 ---
 
-## Core Decision: Medallion Architecture
+## TL;DR
 
-**Why Medallion?** Because the problem requires three different levels of abstraction.
+- The database (supabase) is divided into three layers: **Raw**, **Silver**, and **Gold**. Raw stores the original data so it can be reprocessed if schemas evolve. Silver contains tables with clean, normalized fields that are relevant for analytics and likely to be queried by AI. Gold consists of views optimized for AI SQL queries to **reduce token usage**.
 
-### Bronze: The Immutable Record
+- **ETL pipeline** first ingests data as-is into the raw layer. Then, it is transformed and loaded into the Silver layer. Instead of trying to parse and clean emojis or variations in product names and categories, each product's ID was used to build a **catalog mapping** ID → clean, standardized name and category. **Pydantic validation** ensures only correct records are loaded, and fundamental **DSA concepts** like hash maps, dependency ordering, and set operations were applied to guarantee efficiency and correctness.
 
-Every JSON file from every source is stored exactly as received. No cleaning, no normalization, no assumptions.
+- The web app was built with **Next.js** and **TypeScript**, prioritizing **type safety**. It includes the essentials: login, chat interface, and chart components. The **AI agent**, orchestrated with **LangChain**, uses two tools to generate SQL queries and charts. It interprets user intent, produces validated SQL that passes through a **strict safety check** before querying Supabase, and then determines which chart type and data structure to use. Finally, the system formats the data, renders the chart, and returns it to the user.
 
-**Decision rationale:** When upstream schemas change (they will) or transformation logic has bugs (it will), Bronze becomes the recovery mechanism. Storage cost is trivial compared to the cost of lost data.
+This is the briefest summary possible.
 
-**Trade-off:** We pay storage for insurance. Acceptable.
+If you have any questions, they're likely addressed in the detailed sections below. Use the index to navigate quickly :)
 
-### Silver: The Normalized Foundation
+**Table of Contents**
 
-Three tables. Only fields shared across multiple sources. Everything else goes into JSONB `metadata`.
+1. [Understanding the Real Problem](#1-understanding-the-real-problem)
+2. [DB & Schema Thinking](#2-db--schema-thinking)
+3. [Designing the Data Pipeline](#3-designing-the-data-pipeline)
+4. [Web Application](#4-web-application)
+5. [AI Agent, Queries and Charts](#5-ai-agent-querys-and-charts)
+6. [Live App & Credentials](#6-live-app--credentials)
+7. [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time)
+8. [Explore and run the codebase!](#8-explore-and-run-the-codebase)
+9. [Final Message](#9-final-message)
 
-**Decision rationale:** Adding nullable columns for source-specific fields creates two problems: (1) most rows have NULLs, wasting space and complicating queries, (2) schema changes require migrations for fields that may rarely be queried.
 
-JSONB `metadata` avoids both. The schema stays stable. Source-specific fields remain queryable, just not as convenient.
+## 1. Understanding the Real Problem {#1-understanding-the-real-problem}
 
-**Trade-off:** JSONB extraction adds complexity to queries. But most analytics queries use shared fields anyway. The inconvenience is isolated to edge cases.
+Three different data sources: DoorDash, Square, and Toast. Each comes with its own schema, hundreds of fields, different naming conventions, formats, and inconsistencies.
 
-### Gold: The AI Optimization Layer
+The challenge wasn’t just storing data. The goal was to build a system that allows consistent data integrity, reliable and relevant business analytics, and efficient AI usage.
 
-Two VIEWs that flatten JSONB and pre-resolve JOINs.
+Questions I asked myself before writing a single line of code:
 
-**Decision rationale:** When an AI agent needs to query data, every token counts. Complex JSONB paths like `metadata->>'payment_type'` consume tokens in prompts. Pre-joining tables means the agent writes simpler queries.
+• How can one ensure that the data the AI queries is **100% correct** based on the raw data? (Most important in my opinion)  
+• Which fields are truly useful for **analytics and AI**, and which are less critical?
+• How do I handle **source-specific fields** without complicating AI SQL queries?
+• How could the **schema and DB architecture** be designed to keep AI SQL queries **efficient in cost and performance**?
+• How can the schema **scale and evolve over time**?
 
-But here's the key insight: VIEWs don't store data. If a field becomes frequently queried, we promote it from JSONB to a core column. The view adapts. No data migration needed.
 
-**Trade-off:** VIEWs add a query planning step. But PostgreSQL optimizes this transparently. The AI simplicity wins.
+## 2. DB & Schema Thinking {#2-db--schema-thinking}
 
----
+The system is built on **Supabase**, and the database follows a **Medallion Architecture** to balance data integrity, analytics needs, and AI efficiency. 
 
-## Data Pipeline: Extract, Transform, Load (with Intent)
+### Architecture Layers
 
-### Extract: Dumb Ingestion
+• **Raw layer**: stores all raw source data in a parsed, organized way (entities → locations, orders, payments, items), preserving data for reprocessing if schemas evolve.
 
-Read JSON. Insert into `raw_data`. That's it.
+• **Silver layer**: contains cleaned and normalized tables with fields strictly shared across all sources. Existing tables include `accounts`, `locations`, `orders`, `order_items`, `conversations`, `messages`, and `raw_data`. `accounts` is the parent table. `conversations`, `raw_data`, and `locations` are at the second level. `orders` are children of `locations`, and `order_items` are children of `orders`. Source-specific or unusual fields are stored in a **JSONB metadata** column inside `orders`.
 
-**Decision rationale:** Ingestion should be fast and reliable. Complexity lives downstream. If extraction logic is complex, every schema change breaks it. Keep it simple.
+• **Gold layer**: consists of AI-optimized **views** that flatten JSONB metadata and pre-resolve joins, making data easily queryable without complex SQL. The main views are:
 
-**Source Files:**
-- `doordash_orders.json` - DoorDash orders
-- `square/catalog.json`, `square/orders.json`, `square/payments.json`, `square/locations.json` - Square POS data
-- `toast_pos_export.json` - Toast POS data
+    • **`ai_orders`**: combines core order fields, pre-joined location info, and flattened source-specific metadata (`payment_type`, `card_brand`, `delivery_fee`, etc.).
 
-### Transform: The Catalog Pattern
+    • **`ai_order_items`**: includes core item fields, order context (status, timestamps, fulfillment method), and location context, all pre-joined.
 
-A pre-built `item_catalog.json` maps source IDs to normalized names and categories. Built once during onboarding, updated when menus change.
+These views simplify AI SQL queries, reducing **token usage** and execution complexity, while keeping the underlying tables flexible. By pre-flattening JSONB and pre-joining relations, the AI agent can query what it needs efficiently, without runtime joins or complex JSON path expressions.
 
-**Decision rationale:** The alternative—parsing and normalizing item names on every pipeline run—is expensive and error-prone. Typos, emojis, variations all require regex and heuristics. The catalog eliminates guesswork.
+This design also allows the schema to evolve based on **real AI usage patterns**. Fields and joins frequently queried by the agent can be **promoted** into Gold views, while rarely used ones are **moved** to JSONB or removed from optimized paths. 
 
-The catalog is static by design. New products require manual updates. For franchises with standardized menus, this is acceptable. The trade-off: occasional manual work for guaranteed data quality on every order.
+In the [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) section, I walk **through** how LangSmith can provide the visibility needed to observe user-to-AI interactions and how the AI queries data, enabling continuous optimization of schemas, views, and query cost over time.
 
-**Transformation Steps:**
-1. **Locations** - Extract and normalize location data
-2. **Orders** - Transform orders with FK lookups to locations
-3. **Order Items** - Process items with catalog lookups for normalized names/categories
-4. **Metadata Enrichment** - Populate JSONB `metadata` columns with source-specific fields
+### Key Schema Decisions
 
-**Key Transformations:**
-- Status normalization ("DELIVERED" → "completed")
-- Fulfillment method mapping ("MERCHANT_DELIVERY" → "DELIVERY")
-- Money value handling (already in cents)
-- Catalog-based item name/category normalization
-- Source-specific field extraction to JSONB
+• **UUIDs** for all primary keys to prevent collisions across sources.
 
-**Implementation Note:** The pipeline leverages fundamental DSA concepts for efficiency—dictionaries (hash maps) for O(1) catalog lookups, dependency graphs for transformation ordering, and set operations for deduplication and validation.
+• **Monetary values** stored as integers (cents) to avoid floating-point errors.
 
-### Load: Validation at the Gate
+• **Status normalization** to unify values across sources ("completed", "cancelled", etc.).
 
-Pydantic schemas validate every record before insertion.
+• **Relationships and indexes** designed to support fast, safe, and cost-effective queries for both analytics and AI.
 
-**Decision rationale:** Database constraints catch errors too late. Validation at the transform layer catches errors early, with clear messages. Failed records don't create partial data states.
+This design ensures that all AI queries are accurate and efficient.
 
-### Reprocessability
 
-The entire pipeline is rerunnable. Truncate downstream tables, re-execute transforms—Bronze layer preserves everything.
+## 3. Designing the Data Pipeline {#3-designing-the-data-pipeline}
 
----
+Before thinking about AI or dashboards, the priority was ingesting and normalizing data reliably.
 
-## The AI Agent: Intelligence with Guardrails
+### Extract – Keep it Simple
 
-### Architecture Choice: LangChain Agent with Tools
+I read JSONs as-is and inserted them into `raw_data`.
 
-**Decision rationale:** The agent needs to (1) understand natural language, (2) generate SQL, (3) execute queries, (4) format results, (5) generate visualizations. This is a multi-step process with branching logic.
+**Decision:** No transformation here, preserving the ability to reprocess if schemas evolve or upstream sources change (they will).
 
-LangChain's agent pattern handles this elegantly. The agent iterates until it solves the user's request. It can call tools, see results, and try again if needed.
+### Transform – Maintaining Consistency
 
-### Tool 1: SQL Execution with Validation
+A **product catalog** (`item_catalog.json`) was built to map raw product IDs to clean, normalized names and categories, avoiding parsing emojis or variations for every run. **Trade-off:** initially updates are manual when menus change, but as the system scales, handling new products or menu changes can be automated via scripts, ensuring consistent data quality with minimal manual work.
 
-The agent generates SQL. But it never executes directly.
+Shared fields across all sources were normalized, source-specific or unusual fields were stored in **JSONB metadata**.
 
-**Decision rationale:** LLMs are unpredictable. They might generate valid SQL that's dangerous (`DROP TABLE orders`), or invalid SQL that crashes queries. Defense-in-depth requires validation.
+**Transformation steps:**
+• Normalize locations
+• Transform orders with FK lookups to locations
+• Transform order items using the catalog
+• Enrich JSONB metadata with source-specific fields
 
-**Validation layer:**
-- Only `SELECT` statements (or `WITH ... SELECT` CTEs)
-- Blacklist of dangerous keywords (`DELETE`, `DROP`, `INSERT`, `UPDATE`, etc.)
-- Whitelist of allowed tables
-- Direct PostgreSQL connection (bypasses Supabase API rate limits)
+**Key transformations:** status normalization, fulfillment method mapping, monetary values stored as cents, catalog-based item normalization.
 
-**Trade-off:** Validation adds latency. But the security and reliability wins are non-negotiable.
+**Efficiency note:** Fundamental **DSA concepts** were applied: dictionaries for **O(1) lookups**, dependency graphs for ordering, and sets for deduplication and validation.
 
-### Tool 2: Chart Configuration (Not Generation)
+### Load – Validation at the Gate
 
-The agent generates chart configurations. React components render them.
+Before inserting this into the Silver layer, every record is validated with **Pydantic**.
 
-**Decision rationale:** LLMs can't reliably generate SVG or React components. They might hallucinate props, create invalid layouts, or produce inconsistent styling. 
+**Why:** DB constraints catch errors too late. Early validation gives clear messages and prevents partial states.
 
-Instead, the agent populates pre-defined chart types with data. The chart components are deterministic—same input, same output. No surprises.
+**Pipeline is re-runnable:** truncate downstream tables, re-run transforms; Bronze layer preserves everything.
 
-**Supported Chart Types:** bar, bar-horizontal, bar-grouped, line, line-multi, pie, card, table
+**Testing:** Each transformer has unit tests (`pytest`) that validate field extraction and transformation logic using real source data. Tests ensure that all three sources (DoorDash, Square, Toast) are correctly parsed and mapped to the normalized schema, catching regressions early before data reaches the database.
 
-**Trade-off:** Limited chart flexibility. But reliability and consistency win.
 
-Also, temperature set to 0.3 for consistency, not creativity.
+## 4. Web Application {#4-web-application}
 
-### Context Management
+The web app was built with **Next.js**, **TypeScript**, and **shadCN UI**, prioritizing **type safety** and rapid development. It includes login, a chat interface, and a side panel with a button to create new AI conversations and a list of existing ones.
 
-The last 5 messages are loaded as context. This is a deliberate limit—too much history dilutes relevance, too little loses nuance. The agent receives conversation history as LangChain messages, enabling multi-turn interactions without losing thread.
+> "Design is how it works." — Steve Jobs
 
----
+**UI/UX-first approach:** UI/UX was built first to define how users interact and what data they need, letting backend and AI logic follow to serve the interface, not the other way around. Also, the app is **responsive and mobile-friendly**, designed for users who will frequently access it from various devices.
 
-## Web Application: Maximum Determinism
+The app was deployed on **Vercel**, connected directly to GitHub, with environment variables configured via Vercel's app settings.
 
-**Philosophy:** Trust the types. Validate the inputs. Render predictably.
+Not much else to add here. See ["What I'd Do If I Had More Time"](#7-what-id-do-if-i-had-more-time) for missing and potential app features.
 
-### Type Safety First
 
-TypeScript everywhere. Every API response, database row, component prop is typed.
+## 5. AI Agent, Queries and Charts {#5-ai-agent-querys-and-charts}
 
-**Decision rationale:** Runtime errors are expensive. Type errors surface at build time. This catches bugs early and makes refactoring safe.
+**LangChain** was chosen for its simplicity in building agents and its potential future uses (see [What I'd Do If I Had More Time](#7-what-id-do-if-i-had-more-time) section). The agent uses **GPT-5-2** for its superior code generation skills and also features **automatic retries**, **streaming output**, and two tools: **SQL-query** and **create chart**.
 
-### Deterministic Rendering
+### Interaction Flow
 
-Chart components accept a `ChartConfig` type. Zod validates it. Invalid configurations are rejected before rendering.
+The interaction flow is straightforward: the user types a request → the agent interprets intent → generates SQL which passes a strict safety validation → queries the Gold-layer views or Silver layer in Supabase → decides which chart type to use → formats the data → renders the chart in the UI.
 
-**Decision rationale:** When data is invalid, fail early with clear errors. Don't render partial charts or broken layouts.
+### System Prompt & Schema Documentation
 
-### State Management: Database as Source of Truth
+The agent operates with a comprehensive **system prompt** that includes the complete database schema (Silver and Gold layers), field mappings, normalization rules (status values are lowercase, money in cents), JSONB metadata fields, SQL guidelines (prefer Gold views, date functions), and time awareness patterns ("yesterday", "this week", etc.). This ensures the agent understands the data structure and writes correct queries from the start.
 
-Conversation history lives in the database, not component state.
+### SQL Safety Validation
 
-**Decision rationale:** Component state is ephemeral. Database state persists. When a user refreshes, they see their history. When they switch conversations, context is preserved.
+Before execution, every SQL query passes through **strict validation**: only `SELECT` statements are allowed (including CTEs), dangerous keywords are blocked via regex (`DELETE`, `DROP`, `INSERT`, `UPDATE`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT`, `REVOKE`), and queries must reference whitelisted tables (`ai_orders`, `ai_order_items`, `orders`, `order_items`, `locations`). Validation happens before database connection, preventing destructive operations. Failed validations return clear errors for agent retry.
 
-### Architecture: Next.js App Router
+### Chart Generation
 
-- Server-side rendering for performance
-- Client components for interactivity
-- API routes for backend logic
-- `/api/chat` - Streaming chat endpoint with SSE
-- `/api/auth/login` - Authentication
-- `/api/conversations` - Conversation management
+Chart generation uses pre-defined, **type-safe React components** (**Recharts**) with deterministic configurations. The agent receives a tool that accepts structured chart configs (validated via **Zod**), including types: **bar** (horizontal, grouped), **line** (single, multi-series), **pie**, **card** (single metrics), and **table**. The agent selects the appropriate type based on data structure, formats monetary values from cents to dollars, and populates the configuration. The frontend renders using these validated configs for consistent visualizations.
 
----
+## 6. Live App & Credentials {#6-live-app--credentials}
 
-## Database Schema Decisions
+**Deployment URL:** [clave-take-home.vercel.app](https://clave-take-home.vercel.app)
 
-### UUIDs Over Integers
+**Credentials:**
+- Email: `challenge@tryclave.ai`
+- Password: `123`
 
-All primary keys are UUIDs.
+You can interact directly with the AI chat, or open an existing conversation from the side panel, which already demonstrates the agent's behavior using the example queries provided in `/docs`.
 
-**Decision rationale:** Multi-source data requires collision-free IDs. UUIDs eliminate the risk of ID conflicts when merging data from different sources.
 
-### Money in Cents
+## 7. What I'd Do If I Had More Time {#7-what-id-do-if-i-had-more-time}
 
-All monetary values stored as integers (cents).
+### LangSmith for AI Observability
 
-**Decision rationale:** Floating-point arithmetic introduces rounding errors. Integers eliminate this. Conversion to dollars happens at display time.
+**LangSmith** provides crucial visibility: we can see what queries users send to the agent, track **response latency**, monitor **token costs**, and review the **agentic SQL queries**. This is especially valuable because the database architecture is designed to evolve based on real usage patterns—patterns that can directly translate to cost reduction and building something customers genuinely fall in love with.
 
-### Status Normalization
+Additionally, the **evaluation suite** enables systematic testing of agent behavior across different query types, ensuring reliability as the system scales.
 
-All status values normalized to lowercase: `"completed"`, `"cancelled"`, `"voided"`, `"deleted"`.
+### ETL Pipeline as a Web Service
 
-**Decision rationale:** Sources use different formats (`"DELIVERED"`, `"COMPLETED"`, `"Delivered"`). Normalization simplifies queries and reduces token usage in AI prompts.
+Transform the ETL pipeline into a scalable web service using **FastAPI** and **Redis** for job queuing. This would allow:
+- On-demand data ingestion from new sources, using **Fivetran** as a connector.
+- Scheduled transformations and catalog updates
+- API endpoints for triggering pipeline runs
+- Better error handling and retry mechanisms
 
-### Schema Structure
+### Real-time Alerts
 
-**Silver Layer Tables:**
-- `locations` - location_id (UUID), source_name, name, address fields, timezone
-- `orders` - order_id (UUID), location_id (FK), source_order_id, timestamps, status, fulfillment_method, monetary amounts, metadata (JSONB)
-- `order_items` - order_item_id (UUID), order_id (FK), item_name, category, quantities, prices
+Send **real-time alerts** when business rules are triggered from source data. The agent can reason about the situation, create actionable insights ("call to action"), and send notifications via email to the business owner's mobile device.
 
-**Gold Layer Views:**
-- `ai_orders` - Flattened view with pre-joined locations and extracted metadata columns
-- `ai_order_items` - Flattened view with pre-joined order and location context
+### Fix Cursor Fuckups
 
-**Raw Layer:**
-- `raw_data` - raw_id (UUID), source_name, entity_type, source_entity_id, data (JSONB)
+Yes, Cursor fuckups. As the deadline approached, I accepted some light technical debt to finish the delivery. Specifically in the agent and charts sections, there's likely logic and code blocks that **can and should be optimized**.
 
----
+### Additional Features
 
-## Technical Stack: Deliberate Choices
+- **More chart types** and customization options
+- **Export functionality** for generated charts and data (PDF or XLSX)
 
-**Python 3.12+** for ETL: Rich ecosystem for data processing, strong typing with Pydantic.
 
-**Next.js 16 (App Router)** for web app: Server-side rendering for performance, API routes for backend logic, TypeScript for type safety.
+## 8. Explore and run the codebase! {#8-explore-and-run-the-codebase}
 
-**LangChain** for agent orchestration: Battle-tested patterns for multi-step AI workflows.
+### Project Structure
 
-**Recharts** for visualizations: React-native, deterministic rendering, accessible.
-
-**Zod** for validation: Runtime type validation that matches TypeScript types.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.12+
-- Node.js 18+
-- Supabase account
-- OpenAI API key
-
-### Environment Setup
-
-1. **Clone the repository:**
-```bash
-git clone [repository-url]
-cd clave-take-home
-```
-
-2. **Set up Python environment:**
-```bash
-cd etl
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-3. **Set up Next.js application:**
-```bash
-cd my-dashboard
-npm install
-```
-
-4. **Configure environment variables:**
-
-Create `.env.local` in `my-dashboard/`:
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-OPENAI_API_KEY=your_openai_api_key
-DATABASE_URL=postgresql://user:password@host:port/database
-```
-
-Create `.env` in `etl/`:
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_service_role_key
-```
-
-5. **Set up Supabase database:**
-   - Create tables using SQL from `etl/schemas/`
-   - Create views using SQL from `etl/schemas/views.py`
-
-### Running the ETL Pipeline
-
-```bash
-cd etl
-
-# Extract raw data
-python extractors/extract_all.py
-
-# Transform and load
-python transformers/run.py
-```
-
-### Running the Web Application
-
-**Local Development:**
-```bash
-cd my-dashboard
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-**Production Deployment:**
-The application is deployed on Vercel and available at: [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)
-
----
-
-## Project Structure
+The codebase is organized into two main parts: the ETL pipeline (`etl/`) and the web application (`my-dashboard/`).
 
 ```
 clave-take-home/
-├── etl/                          # Data pipeline
-│   ├── extractors/               # Raw data extraction
-│   ├── transformers/             # Data transformation
-│   ├── catalog/                  # Item catalog (normalization)
-│   ├── schemas/                  # Pydantic models
-│   └── data/sources/             # Raw JSON source files
-│
-├── my-dashboard/                 # Next.js web application
-│   ├── app/
-│   │   ├── (dashboard)/          # Dashboard routes
-│   │   ├── api/                  # API routes (chat, auth, conversations)
-│   │   ├── _components/          # React components
-│   │   ├── _lib/                 # Utilities (agent, db, auth)
-│   │   └── _types/               # TypeScript types
-│   └── components/ui/            # shadcn/ui components
-│
-└── docs/                         # Documentation
-    ├── EXAMPLE_QUERIES.md        # Query examples
-    └── SCHEMA_HINTS.md           # Schema documentation
+├── etl/                    # ETL pipeline (Python)
+│   ├── catalog/           # Item catalog mapping
+│   ├── data/sources/      # Raw JSON data files
+│   ├── extractors/        # Extract raw data to Bronze layer
+│   ├── transformers/      # Transform to Silver layer
+│   ├── schemas/           # Pydantic schemas
+│   ├── db/                # Database connection
+│   └── requirements.txt   # Python dependencies
+├── my-dashboard/          # Web application (Next.js)
+│   ├── app/              # Next.js App Router
+│   │   ├── api/          # API routes (chat, auth, conversations)
+│   │   ├── _lib/         # Core libraries (agent, supabase, auth)
+│   │   └── _components/  # React components
+│   └── package.json      # Node.js dependencies
+└── docs/                  # Documentation
 ```
 
----
+### Environment Variables
 
-## Features
+The ETL pipeline requires a `.env` file in the project root with:
 
-✅ Multi-source data ingestion (DoorDash, Square, Toast)  
-✅ Data normalization and cleaning pipeline  
-✅ Medallion architecture for scalable processing  
-✅ Item catalog for consistent product naming  
-✅ Natural language query interface  
-✅ AI-powered SQL generation with security validation  
-✅ Deterministic chart rendering (bar, line, pie, table, card)  
-✅ Real-time streaming responses via SSE  
-✅ Conversation history persistence  
-✅ Secure authentication  
-✅ Production-ready error handling  
-✅ **Deployed on Vercel** - Live demo available
+```
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_service_role_key
+```
 
----
+The web application requires environment variables in `my-dashboard/.env.local`:
 
-## Deployment
+```
+# Supabase (server-side)
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_service_role_key
 
-The application is deployed on **Vercel** and accessible at:
-- **Production URL:** [https://clave-take-home.vercel.app](https://clave-take-home.vercel.app)
+# Supabase (client-side)
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-### Access Credentials
+# Database connection (for direct SQL queries)
+DATABASE_URL=postgresql://user:password@host:port/database
+# OR
+SUPABASE_DB_URL=postgresql://user:password@host:port/database
 
-For evaluators and reviewers:
-- **Email:** `challenge@tryclave.ai`
-- **Password:** `123`
+# OpenAI (for LangChain agent)
+OPENAI_API_KEY=your_openai_api_key
+```
 
-The deployment includes:
-- Next.js application (frontend + API routes)
-- Environment variables configured for production
-- Automatic deployments on push to main branch
+### Setup Instructions
 
----
+To run the ETL pipeline, first set up a Python virtual environment and install dependencies:
 
-## Future Improvements
+```bash
+# Create virtual environment (Python 3.12+)
+python -m venv etl/venv
 
-- **AI Observability with LangSmith:** Integrate LangSmith for comprehensive AI agent observability—tracking tool usage, query patterns, token consumption, and response quality. Use this data to drive schema evolution: promote frequently accessed metadata fields from JSONB to core columns, and demote rarely queried fields back to JSONB.
+# Activate virtual environment
+# On Windows:
+etl\venv\Scripts\activate
+# On macOS/Linux:
+source etl/venv/bin/activate
 
-- **ETL as a Service:** Evolve the ETL pipeline into a production-grade web service using FastAPI. Redis would serve as both queue system and message broker, enabling efficient and scalable handling of incoming data streams. This architecture supports distributed processing, retry mechanisms, and graceful handling of backpressure.
+# Install dependencies
+cd etl
+pip install -r requirements.txt
 
-- **Query Optimization:** Add indexes based on actual query patterns observed through production usage
+# Run ETL pipeline
+python transformers/run.py
+```
 
-- **Error Recovery:** Implement retry logic and partial failure handling for the ETL pipeline
+To run the web application, install Node.js dependencies and start the development server:
 
-- **Caching:** Cache common query results to reduce database load
+```bash
+cd my-dashboard
 
-- **Export:** Add data export functionality (CSV, PDF reports)
+# Install dependencies
+npm install
 
-- **Advanced Visualizations:** Support for more chart types (heatmaps, scatter plots)
+# Run development server
+npm run dev
+```
+
+The application will be available at `http://localhost:3000`. Make sure your Supabase database is set up with the required tables (see schema section above) and that all environment variables are configured before running either component.
+
+
+## 9. Final Message {#9-final-message}
+
+This solution was challenging (in the best way). Many steps I took to make the right product and technical decisions taught me something new and pushed me to grow. Still, **feedback is always welcome**—there's always a better way to do things.
+
+Special shoutout to **Carlos and Vale**, who designed a great take-home challenge—thanks for the time invested.
+
+— Luis Chapa 🚀
